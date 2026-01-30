@@ -321,39 +321,41 @@ export async function createSoraVideoWithImage(
 export async function createGrokVideo(
   apiKey: string,
   prompt: string,
-  subModel: string = 'grok-video-3-10s',
+  _subModel: string = 'grok-video-3',
   options: Omit<GrokOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
   const { apiBaseUrl } = getSettings();
   const url = `${apiBaseUrl}/video/create`;
 
-  const formData = new FormData();
-  formData.append('model', subModel);
-  formData.append('prompt', prompt);
-  formData.append('seconds', String(options.duration || 10));
-  formData.append('audio', options.audioEnabled !== false ? 'true' : 'false'); // 音画同出，默认开启
-
-  // 转换宽高比
+  // Grok API 使用 JSON 格式
+  // 转换宽高比：Grok 支持 "2:3", "3:2", "1:1"
   const ratioMap: Record<string, string> = {
-    '16:9': '16x9',
-    '9:16': '9x16',
-    '1:1': '1x1',
+    '16:9': '3:2',  // 横向视频
+    '9:16': '2:3',  // 竖向视频
+    '1:1': '1:1',   // 方形
   };
-  formData.append('size', ratioMap[options.aspectRatio || '16:9'] || '16x9');
+
+  const requestBody = {
+    model: 'grok-video-3',
+    prompt: prompt,
+    aspect_ratio: ratioMap[options.aspectRatio || '16:9'] || '3:2',
+    size: '720P',  // 只支持 720P
+    images: [],  // 纯文本生成时为空数组
+  };
 
   console.log('[API] 调用 Grok 视频生成 API');
   console.log('[API] URL:', url);
-  console.log('[API] 子模型:', subModel);
-  console.log('[API] 提示词:', prompt);
-  console.log('[API] 参数:', { seconds: options.duration || 10, audio: options.audioEnabled !== false });
+  console.log('[API] 模型:', requestBody.model);
+  console.log('[API] 请求体:', JSON.stringify(requestBody, null, 2));
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
+      'Content-Type': 'application/json',
       'Accept': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: formData,
+    body: JSON.stringify(requestBody),
   });
 
   console.log('[API] 响应状态:', response.status, response.statusText);
@@ -373,62 +375,17 @@ export async function createGrokVideo(
 }
 
 // Create Grok video with image input
+// NOTE: Grok API 目前只支持图片 URL，不支持 base64 直接上传
+// 如果需要图片转视频功能，需要先将图片上传到可访问的 URL
 export async function createGrokVideoWithImage(
-  apiKey: string,
-  prompt: string,
-  imageData: string,
-  subModel: string = 'grok-video-3-10s',
-  options: Omit<GrokOptions, 'subModel'> = {}
+  _apiKey: string,
+  _prompt: string,
+  _imageData: string,
+  _subModel: string = 'grok-video-3',
+  _options: Omit<GrokOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
-  const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/video/create`;
-
-  const formData = new FormData();
-  formData.append('model', subModel);
-  formData.append('prompt', prompt);
-  formData.append('seconds', String(options.duration || 10));
-  formData.append('audio', options.audioEnabled !== false ? 'true' : 'false');
-
-  // 转换宽高比
-  const ratioMap: Record<string, string> = {
-    '16:9': '16x9',
-    '9:16': '9x16',
-    '1:1': '1x1',
-  };
-  formData.append('size', ratioMap[options.aspectRatio || '16:9'] || '16x9');
-
-  // 将base64图片转换为Blob
-  const imageBlob = base64ToBlob(imageData);
-  formData.append('input_reference', imageBlob, 'reference.png');
-
-  console.log('[API] 调用 Grok 图片转视频 API');
-  console.log('[API] URL:', url);
-  console.log('[API] 子模型:', subModel);
-  console.log('[API] 提示词:', prompt);
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: formData,
-  });
-
-  console.log('[API] 响应状态:', response.status, response.statusText);
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    console.error('[API] 错误响应:', error);
-    throw new Error(error.message || `API error: ${response.status}`);
-  }
-
-  const rawData = await response.json();
-  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
-  return {
-    taskId: rawData.id,
-    status: mapGrokStatus(rawData.status),
-  };
+  console.error('[API] Grok 图片转视频需要图片 URL，当前不支持 base64 上传');
+  throw new Error('Grok 图片转视频暂未支持，请先使用文字生成');
 }
 
 // Query Grok task status

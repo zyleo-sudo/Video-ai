@@ -58,10 +58,10 @@ export const GROK_SUB_MODELS: Record<GrokSubModel, {
   priceLabel: string;
   description: string;
 }> = {
-  'grok-video-3-10s': {
-    name: 'Grok Video 3 10s',
+  'grok-video-3': {
+    name: 'Grok Video 3',
     priceLabel: '¥¥',
-    description: '10秒视频 - 支持音画同出',
+    description: '10秒视频 - 支持音画同出 - 720P',
   },
 };
 
@@ -73,7 +73,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultModel: 'veo',
   defaultVeoSubModel: 'veo_3_1-fast',
   defaultSoraSubModel: 'sora-2-all',
-  defaultGrokSubModel: 'grok-video-3-10s',
+  defaultGrokSubModel: 'grok-video-3',
   defaultAspectRatio: '16:9',
   apiBaseUrl: 'https://allapi.store/v1',
 };

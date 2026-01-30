@@ -8,7 +8,7 @@ export type VeoSubModel = 'veo_3_1' | 'veo_3_1-fast' | 'veo_3_1-fast-4K' | 'veo_
 export type SoraSubModel = 'sora-2-all';
 
 // Grok sub-model types
-export type GrokSubModel = 'grok-video-3-10s';
+export type GrokSubModel = 'grok-video-3';
 
 // Video generation status
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
