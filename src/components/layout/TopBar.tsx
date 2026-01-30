@@ -1,0 +1,134 @@
+import { VideoModel, VeoSubModel, SoraSubModel } from '../../types';
+import { MODEL_CONFIGS, VEO_SUB_MODELS, SORA_SUB_MODELS } from '../../utils/constants';
+
+interface TopBarProps {
+  model: VideoModel;
+  veoSubModel: VeoSubModel;
+  soraSubModel: SoraSubModel;
+  batchMode: boolean;
+  onModelChange: (model: VideoModel) => void;
+  onVeoSubModelChange: (subModel: VeoSubModel) => void;
+  onSoraSubModelChange: (subModel: SoraSubModel) => void;
+  onBatchModeChange: (batchMode: boolean) => void;
+}
+
+export function TopBar({
+  model,
+  veoSubModel,
+  soraSubModel,
+  batchMode,
+  onModelChange,
+  onVeoSubModelChange,
+  onSoraSubModelChange,
+  onBatchModeChange,
+}: TopBarProps) {
+  return (
+    <div className="fixed top-0 left-20 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 z-40">
+      {/* Left Section - Model Selection */}
+      <div className="flex items-center gap-4">
+        {/* Model Selector */}
+        <div className="relative">
+          <select
+            value={model}
+            onChange={(e) => onModelChange(e.target.value as VideoModel)}
+            className="appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 pr-10 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+          >
+            {Object.entries(MODEL_CONFIGS).map(([key, config]) => (
+              <option key={key} value={key}>
+                {config.name}
+              </option>
+            ))}
+          </select>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Sub-model Selector */}
+        {model === 'veo' && (
+          <div className="relative">
+            <select
+              value={veoSubModel}
+              onChange={(e) => onVeoSubModelChange(e.target.value as VeoSubModel)}
+              className="appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 pr-10 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+            >
+              {Object.entries(VEO_SUB_MODELS).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.name}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        )}
+
+        {model === 'sora' && (
+          <div className="relative">
+            <select
+              value={soraSubModel}
+              onChange={(e) => onSoraSubModelChange(e.target.value as SoraSubModel)}
+              className="appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 pr-10 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+            >
+              {Object.entries(SORA_SUB_MODELS).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.name}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Center Section - Batch Mode Toggle */}
+      <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1">
+        <button
+          onClick={() => onBatchModeChange(false)}
+          className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
+            !batchMode
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          单个
+        </button>
+        <button
+          onClick={() => onBatchModeChange(true)}
+          className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
+            batchMode
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          批量
+        </button>
+      </div>
+
+      {/* Right Section - Search */}
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="搜索..."
+            className="w-64 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <div className="absolute left-3 top-1/2 -translate-y-1/2">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

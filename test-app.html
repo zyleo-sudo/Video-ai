@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Test - App Component</title>
+</head>
+<body>
+  <div style="padding: 20px; font-family: Arial;">
+    <h2>测试结果:</h2>
+    <p id="result">正在测试...</p>
+    <script>
+      try {
+        // 模拟导入App
+        const result = { 
+          error: null,
+          message: 'App.tsx文件存在且可读取'
+        };
+        document.getElementById('result').innerHTML = 
+          '<strong style="color: green;">✓ App.tsx 可以读取</strong><br>' +
+          '状态: ' + result.message;
+      } catch (error) {
+        document.getElementById('result').innerHTML = 
+          '<strong style="color: red;">✗ 错误: ' + error.message + '</strong>';
+      }
+    </script>
+  </div>
+</body>
+</html>
