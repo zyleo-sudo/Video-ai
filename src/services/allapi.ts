@@ -4,6 +4,7 @@ import {
   VideoModel,
   VeoOptions,
   SoraOptions,
+  GrokOptions,
   TaskStatus,
 } from '../types';
 
@@ -316,6 +317,165 @@ export async function createSoraVideoWithImage(
   }
 }
 
+// Create Grok video generation task
+export async function createGrokVideo(
+  apiKey: string,
+  prompt: string,
+  subModel: string = 'grok-video-3-10s',
+  options: Omit<GrokOptions, 'subModel'> = {}
+): Promise<{ taskId: string; status: TaskStatus }> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/video/create`;
+
+  const formData = new FormData();
+  formData.append('model', subModel);
+  formData.append('prompt', prompt);
+  formData.append('seconds', String(options.duration || 10));
+  formData.append('audio', options.audioEnabled !== false ? 'true' : 'false'); // 音画同出，默认开启
+
+  // 转换宽高比
+  const ratioMap: Record<string, string> = {
+    '16:9': '16x9',
+    '9:16': '9x16',
+    '1:1': '1x1',
+  };
+  formData.append('size', ratioMap[options.aspectRatio || '16:9'] || '16x9');
+
+  console.log('[API] 调用 Grok 视频生成 API');
+  console.log('[API] URL:', url);
+  console.log('[API] 子模型:', subModel);
+  console.log('[API] 提示词:', prompt);
+  console.log('[API] 参数:', { seconds: options.duration || 10, audio: options.audioEnabled !== false });
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  console.log('[API] 响应状态:', response.status, response.statusText);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    console.error('[API] 错误响应:', error);
+    throw new Error(error.message || `API error: ${response.status}`);
+  }
+
+  const rawData = await response.json();
+  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+  return {
+    taskId: rawData.id,
+    status: mapGrokStatus(rawData.status),
+  };
+}
+
+// Create Grok video with image input
+export async function createGrokVideoWithImage(
+  apiKey: string,
+  prompt: string,
+  imageData: string,
+  subModel: string = 'grok-video-3-10s',
+  options: Omit<GrokOptions, 'subModel'> = {}
+): Promise<{ taskId: string; status: TaskStatus }> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/video/create`;
+
+  const formData = new FormData();
+  formData.append('model', subModel);
+  formData.append('prompt', prompt);
+  formData.append('seconds', String(options.duration || 10));
+  formData.append('audio', options.audioEnabled !== false ? 'true' : 'false');
+
+  // 转换宽高比
+  const ratioMap: Record<string, string> = {
+    '16:9': '16x9',
+    '9:16': '9x16',
+    '1:1': '1x1',
+  };
+  formData.append('size', ratioMap[options.aspectRatio || '16:9'] || '16x9');
+
+  // 将base64图片转换为Blob
+  const imageBlob = base64ToBlob(imageData);
+  formData.append('input_reference', imageBlob, 'reference.png');
+
+  console.log('[API] 调用 Grok 图片转视频 API');
+  console.log('[API] URL:', url);
+  console.log('[API] 子模型:', subModel);
+  console.log('[API] 提示词:', prompt);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  console.log('[API] 响应状态:', response.status, response.statusText);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    console.error('[API] 错误响应:', error);
+    throw new Error(error.message || `API error: ${response.status}`);
+  }
+
+  const rawData = await response.json();
+  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+  return {
+    taskId: rawData.id,
+    status: mapGrokStatus(rawData.status),
+  };
+}
+
+// Query Grok task status
+export async function queryGrokTask(
+  apiKey: string,
+  taskId: string,
+  _model: string = 'grok-video-3-10s'
+): Promise<{
+  status: TaskStatus;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  progress?: number;
+  errorMessage?: string;
+}> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/video/query?id=${taskId}`;
+
+  console.log('[API] 查询 Grok 任务状态');
+  console.log('[API] URL:', url);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+  });
+
+  console.log('[API] 查询响应状态:', response.status, response.statusText);
+
+  if (!response.ok) {
+    throw new Error(`Failed to query task: ${response.status}`);
+  }
+
+  const rawData = await response.json();
+  console.log('[API] 查询响应原始数据:', JSON.stringify(rawData, null, 2));
+
+  return {
+    status: mapGrokStatus(rawData.status),
+    videoUrl: rawData.video_url || undefined,
+    thumbnailUrl: rawData.cover_url || undefined,
+    progress: undefined,
+    errorMessage: rawData.error?.message || undefined,
+  };
+}
+
 // Query Sora task status
 export async function querySoraTask(
   apiKey: string,
@@ -386,7 +546,9 @@ export async function pollTaskStatus(
       const result =
         model === 'veo'
           ? await queryVeoTask(apiKey, taskId, apiModel || 'veo_3_1-fast-4K')
-          : await querySoraTask(apiKey, taskId, apiModel || 'sora-2');
+          : model === 'grok'
+            ? await queryGrokTask(apiKey, taskId, apiModel || 'grok-video-3-10s')
+            : await querySoraTask(apiKey, taskId, apiModel || 'sora-2');
 
       // 使用 API 返回的真实进度，如果没有则用计算值
       const progress = result.progress !== undefined ? result.progress : (attempts / POLLING_CONFIG.maxAttempts) * 100;
@@ -449,6 +611,23 @@ function mapVeoStatus(status: string): TaskStatus {
 }
 
 function mapSoraStatus(status: string): TaskStatus {
+  const statusMap: Record<string, TaskStatus> = {
+    pending: 'pending',
+    processing: 'processing',
+    succeeded: 'completed',
+    completed: 'completed',
+    failed: 'failed',
+    cancelled: 'failed',
+    SUBMITTED: 'pending',
+    QUEUED: 'pending',
+    PROCESSING: 'processing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+  };
+  return statusMap[status] || 'pending';
+}
+
+function mapGrokStatus(status: string): TaskStatus {
   const statusMap: Record<string, TaskStatus> = {
     pending: 'pending',
     processing: 'processing',

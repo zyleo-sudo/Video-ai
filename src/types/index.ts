@@ -1,11 +1,14 @@
 // Video generation models
-export type VideoModel = 'veo' | 'sora';
+export type VideoModel = 'veo' | 'sora' | 'grok';
 
 // Veo sub-model types (OpenAI format)
 export type VeoSubModel = 'veo_3_1' | 'veo_3_1-fast' | 'veo_3_1-fast-4K' | 'veo_3_1-pro';
 
 // Sora sub-model types
 export type SoraSubModel = 'sora-2-all';
+
+// Grok sub-model types
+export type GrokSubModel = 'grok-video-3-10s';
 
 // Video generation status
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -28,6 +31,14 @@ export interface SoraOptions {
   resolution?: '480p' | '720p' | '1080p';
 }
 
+// Grok generation options
+export interface GrokOptions {
+  subModel?: GrokSubModel;
+  aspectRatio?: '16:9' | '9:16' | '1:1';
+  duration?: number; // in seconds, max 10s
+  audioEnabled?: boolean; // 音画同出
+}
+
 // Video generation task
 export interface VideoTask {
   id: string;
@@ -40,7 +51,7 @@ export interface VideoTask {
   thumbnailUrl?: string;
   errorMessage?: string;
   progress?: number;
-  options?: VeoOptions | SoraOptions;
+  options?: VeoOptions | SoraOptions | GrokOptions;
   imageData?: string; // base64 image for image-to-video
   position?: { x: number; y: number }; // position on the canvas
 }
@@ -54,7 +65,7 @@ export interface HistoryRecord {
   videoUrl: string;
   thumbnailUrl?: string;
   duration?: number;
-  options?: VeoOptions | SoraOptions;
+  options?: VeoOptions | SoraOptions | GrokOptions;
 }
 
 // Download item
@@ -98,6 +109,7 @@ export interface AppSettings {
   defaultModel: VideoModel;
   defaultVeoSubModel: VeoSubModel;
   defaultSoraSubModel: SoraSubModel;
+  defaultGrokSubModel: GrokSubModel;
   defaultAspectRatio: string;
   apiBaseUrl: string;
 }

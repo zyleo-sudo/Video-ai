@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { VideoModel, VeoSubModel, SoraSubModel } from '../../types';
+import { VideoModel, VeoSubModel, SoraSubModel, GrokSubModel } from '../../types';
 import { ASPECT_RATIOS, DURATION_OPTIONS, generateId } from '../../utils/constants';
 import { optimizePrompt } from '../../services/allapi';
 
@@ -8,6 +8,7 @@ interface BottomEditorProps {
   model: VideoModel;
   veoSubModel: VeoSubModel;
   soraSubModel: SoraSubModel;
+  grokSubModel: GrokSubModel;
   batchMode: boolean;
   onGenerate: (data: GenerateData) => void;
   initialPrompt?: string;
@@ -18,6 +19,7 @@ interface GenerateData {
   model: VideoModel;
   veoSubModel: VeoSubModel;
   soraSubModel: SoraSubModel;
+  grokSubModel: GrokSubModel;
   prompts: string[];
   imageData?: string;
   imageData2?: string;
@@ -37,6 +39,7 @@ export function BottomEditor({
   model,
   veoSubModel,
   soraSubModel,
+  grokSubModel,
   batchMode,
   onGenerate,
   initialPrompt,
@@ -60,7 +63,6 @@ export function BottomEditor({
   );
   const availableDurations = DURATION_OPTIONS[model as keyof typeof DURATION_OPTIONS];
 
-  // Sync initialPrompt from App
   useEffect(() => {
     if (initialPrompt) {
       setPrompt(initialPrompt);
@@ -158,6 +160,7 @@ export function BottomEditor({
       model,
       veoSubModel,
       soraSubModel,
+      grokSubModel,
       prompts: promptsToProcess,
       imageData: useImage ? imageData : undefined,
       imageData2: useImage && imageType === 'start-end' ? imageData2 : undefined,
@@ -168,23 +171,30 @@ export function BottomEditor({
     });
   };
 
+  // Reset duration when model changes
+  useEffect(() => {
+    setDuration(availableDurations[0]);
+  }, [model, availableDurations]);
+
   return (
     <div className="fixed bottom-0 left-20 right-0 bg-white border-t border-gray-200 p-6 z-50">
       <div className="max-w-6xl mx-auto">
-        {/* Image/Video Upload Tabs - Only for Veo */}
-        {model === 'veo' && (
+        {/* Image/Video Upload Tabs - Only for Veo and Grok */}
+        {(model === 'veo' || model === 'grok') && (
           <div className="flex items-center gap-2 mb-4">
             <button
               onClick={() => setUseImage(false)}
-              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${!useImage ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                !useImage ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
               文字输入
             </button>
             <button
               onClick={() => setUseImage(true)}
-              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${useImage ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+              className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                useImage ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
               图片输入
             </button>
@@ -195,15 +205,17 @@ export function BottomEditor({
                 <div className="h-6 w-px bg-gray-300 mx-2" />
                 <button
                   onClick={() => setImageType('reference')}
-                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${imageType === 'reference' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                    imageType === 'reference' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
                 >
                   参考图
                 </button>
                 <button
                   onClick={() => setImageType('start-end')}
-                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${imageType === 'start-end' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                    imageType === 'start-end' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
                 >
                   首尾帧
                 </button>
@@ -268,22 +280,25 @@ export function BottomEditor({
             <button
               onClick={handleOptimizePrompt}
               disabled={isOptimizing || !prompt.trim()}
-              className={`absolute top-2 right-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all border shadow-sm ${isOptimizing || !prompt.trim()
-                ? 'text-gray-400 bg-gray-50 border-gray-100 cursor-not-allowed'
-                : 'text-blue-600 bg-white border-blue-100 hover:border-blue-300 hover:shadow-md active:scale-95'
-                }`}
+              className={`absolute top-2 right-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                isOptimizing || !prompt.trim()
+                  ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                  : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+              }`}
             >
               {isOptimizing ? (
                 <span className="flex items-center gap-1">
                   <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  <span>优化中...</span>
+                  优化中...
                 </span>
               ) : (
                 <span className="flex items-center gap-1">
-                  <span className="text-[14px]">✨</span>
-                  <span>AI 优化</span>
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  AI 优化
                 </span>
               )}
             </button>
@@ -371,13 +386,9 @@ export function BottomEditor({
           <button
             onClick={handleGenerate}
             disabled={!apiKey || (!batchMode && !prompt.trim()) || (batchMode && batchPrompts.length === 0)}
-            className="group relative px-10 py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-black disabled:bg-gray-300 disabled:cursor-not-allowed transition-all shadow-xl overflow-hidden"
+            className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed transition-all shadow-lg"
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <span className="relative z-10 flex items-center gap-2">
-              <span>{batchMode ? `${batchPrompts.length} 任务排队中` : '开始创作视频'}</span>
-              <span className="text-xl group-hover:translate-x-1 transition-transform">→</span>
-            </span>
+            {batchMode ? `生成 ${batchPrompts.length} 个视频` : '生成视频'}
           </button>
         </div>
       </div>

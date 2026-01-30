@@ -1,4 +1,4 @@
-import { VideoModel, AppSettings, VeoSubModel, SoraSubModel } from '../types';
+import { VideoModel, AppSettings, VeoSubModel, SoraSubModel, GrokSubModel } from '../types';
 
 // ALLAPI configuration
 export const ALLAPI_BASE_URL = 'https://allapi.store/v1';
@@ -52,6 +52,19 @@ export const SORA_SUB_MODELS: Record<SoraSubModel, {
   },
 };
 
+// Grok sub-model configurations
+export const GROK_SUB_MODELS: Record<GrokSubModel, {
+  name: string;
+  priceLabel: string;
+  description: string;
+}> = {
+  'grok-video-3-10s': {
+    name: 'Grok Video 3 10s',
+    priceLabel: '¥¥',
+    description: '10秒视频 - 支持音画同出',
+  },
+};
+
 // Default settings
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: '',
@@ -60,6 +73,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultModel: 'veo',
   defaultVeoSubModel: 'veo_3_1-fast',
   defaultSoraSubModel: 'sora-2-all',
+  defaultGrokSubModel: 'grok-video-3-10s',
   defaultAspectRatio: '16:9',
   apiBaseUrl: 'https://allapi.store/v1',
 };
@@ -92,12 +106,19 @@ export const MODEL_CONFIGS: Record<VideoModel, {
     supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
     supportsImage: true,
   },
+  grok: {
+    name: 'Grok Video',
+    maxDuration: 10,
+    supportedAspectRatios: ['16:9', '9:16', '1:1'],
+    supportsImage: true,
+  },
 };
 
 // Duration options by model
 export const DURATION_OPTIONS = {
   veo: [2, 4, 6, 8],
   sora: [5, 10, 15, 20, 30, 60],
+  grok: [10],
 };
 
 // Polling configuration

@@ -5,13 +5,15 @@ import { CanvasWorkspace } from './components/layout/CanvasWorkspace';
 import { BottomEditor } from './components/layout/BottomEditor';
 import { RightRail } from './components/layout/RightRail';
 import { PromptTemplates } from './components/PromptTemplates';
-import { VideoTask, VideoModel, VeoSubModel, SoraSubModel, AppSettings } from './types';
+import { VideoTask, VideoModel, VeoSubModel, SoraSubModel, GrokSubModel, AppSettings } from './types';
 import { getApiKey, setApiKey as setApiKeyToStorage, getSettings, setSettings as setSettingsToStorage, getTasks as getTasksFromStorage, setTasks as setTasksToStorage, addTask as addTaskToStorage } from './services/storage';
 import {
   createVeoVideo,
   createVeoVideoWithImage,
   createSoraVideo,
   createSoraVideoWithImage,
+  createGrokVideo,
+  createGrokVideoWithImage,
   pollTaskStatus,
 } from './services/allapi';
 import { addHistory } from './services/storage';
@@ -24,6 +26,7 @@ interface GenerateData {
   model: VideoModel;
   veoSubModel: VeoSubModel;
   soraSubModel: SoraSubModel;
+  grokSubModel: GrokSubModel;
   prompts: string[];
   imageData?: string;
   imageData2?: string;
@@ -45,6 +48,7 @@ function App() {
   const [model, setModel] = useState<VideoModel>(appSettings.defaultModel);
   const [veoSubModel, setVeoSubModel] = useState<VeoSubModel>(appSettings.defaultVeoSubModel);
   const [soraSubModel, setSoraSubModel] = useState<SoraSubModel>(appSettings.defaultSoraSubModel);
+  const [grokSubModel, setGrokSubModel] = useState<GrokSubModel>(appSettings.defaultGrokSubModel);
   const [batchMode, setBatchMode] = useState(false);
   const [globalPrompt, setGlobalPrompt] = useState('');
 
@@ -66,6 +70,11 @@ function App() {
   const handleSoraSubModelChange = useCallback((subModel: SoraSubModel) => {
     setSoraSubModel(subModel);
     updateSettings({ defaultSoraSubModel: subModel });
+  }, []);
+
+  const handleGrokSubModelChange = useCallback((subModel: GrokSubModel) => {
+    setGrokSubModel(subModel);
+    updateSettings({ defaultGrokSubModel: subModel });
   }, []);
 
   const updateSettings = (updates: Partial<AppSettings>) => {
@@ -115,6 +124,12 @@ function App() {
           duration: data.duration,
         };
 
+        const grokOptions = {
+          aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
+          duration: data.duration,
+          audioEnabled: true, // 音画同出
+        };
+
         let result;
         if (data.model === 'veo') {
           if (data.imageData) {
@@ -127,6 +142,18 @@ function App() {
             );
           } else {
             result = await createVeoVideo(apiKey, promptText, data.veoSubModel, veoOptions);
+          }
+        } else if (data.model === 'grok') {
+          if (data.imageData) {
+            result = await createGrokVideoWithImage(
+              apiKey,
+              promptText,
+              data.imageData,
+              data.grokSubModel,
+              grokOptions
+            );
+          } else {
+            result = await createGrokVideo(apiKey, promptText, data.grokSubModel, grokOptions);
           }
         } else {
           if (data.imageData) {
@@ -142,7 +169,7 @@ function App() {
           }
         }
 
-        const subModel = data.model === 'veo' ? data.veoSubModel : data.soraSubModel;
+        const subModel = data.model === 'veo' ? data.veoSubModel : data.model === 'grok' ? data.grokSubModel : data.soraSubModel;
 
         const pollResult = await pollTaskStatus(
           apiKey,
@@ -209,7 +236,9 @@ function App() {
       progress: 0,
       options: data.model === 'veo'
         ? { subModel: data.veoSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, negativePrompt: data.negativePrompt, imageType: data.imageType }
-        : { subModel: data.soraSubModel, aspectRatio: data.aspectRatio, duration: data.duration },
+        : data.model === 'grok'
+          ? { subModel: data.grokSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, audioEnabled: true }
+          : { subModel: data.soraSubModel, aspectRatio: data.aspectRatio, duration: data.duration },
       imageData: data.imageData,
       position: { x: 100 + (Math.random() * 200), y: 100 + (Math.random() * 200) },
     };
@@ -224,10 +253,12 @@ function App() {
           model={model}
           veoSubModel={veoSubModel}
           soraSubModel={soraSubModel}
+          grokSubModel={grokSubModel}
           batchMode={batchMode}
           onModelChange={handleModelChange}
           onVeoSubModelChange={handleVeoSubModelChange}
           onSoraSubModelChange={handleSoraSubModelChange}
+          onGrokSubModelChange={handleGrokSubModelChange}
           onBatchModeChange={setBatchMode}
         />
 
@@ -354,6 +385,7 @@ function App() {
           model={model}
           veoSubModel={veoSubModel}
           soraSubModel={soraSubModel}
+          grokSubModel={grokSubModel}
           batchMode={batchMode}
           onGenerate={handleGenerate}
           initialPrompt={globalPrompt}
