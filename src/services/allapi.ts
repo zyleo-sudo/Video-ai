@@ -809,12 +809,12 @@ export async function createGeminiImage(
 
     console.log('[API] 响应状态:', response.status, response.statusText);
 
-    // 如果 /images/generations 不支持，回退到 /chat/completions
-    if (response.status === 404 || response.status === 400) {
-      console.log('[API] /images/generations 不支持，回退到 /chat/completions');
+    // 如果 /images/generations 失败，回退到 /chat/completions
+    if (!response.ok) {
+      console.log(`[API] /images/generations 返回 ${response.status}，回退到 /chat/completions`);
 
-      url = `${apiBaseUrl}/chat/completions`;
-      requestBody = {
+      const fallbackUrl = `${apiBaseUrl}/chat/completions`;
+      const fallbackRequestBody = {
         model: subModel,
         messages: [{ role: 'user', content: prompt }],
         response_modalities: ['image'],
@@ -824,16 +824,16 @@ export async function createGeminiImage(
         temperature: 0.7,
       };
 
-      console.log('[API] Fallback 请求体:', JSON.stringify(requestBody, null, 2));
+      console.log('[API] Fallback 请求体:', JSON.stringify(fallbackRequestBody, null, 2));
 
-      const fallbackResponse = await fetch(url, {
+      const fallbackResponse = await fetch(fallbackUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(fallbackRequestBody),
       });
 
       if (!fallbackResponse.ok) {
@@ -845,12 +845,6 @@ export async function createGeminiImage(
       const rawData = await fallbackResponse.json();
       console.log('[API] Fallback 响应成功');
       return parseImageResponse(rawData);
-    }
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      console.error('[API] 错误响应:', error);
-      throw new Error(error.message || `API error: ${response.status}`);
     }
 
     const rawData = await response.json();
