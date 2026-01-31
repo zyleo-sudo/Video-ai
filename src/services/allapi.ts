@@ -745,7 +745,7 @@ export async function createGeminiImage(
     resolution?: '720P' | '1080P' | '2K' | '4K';
     negativePrompt?: string;
   } = {}
-): Promise<{ taskId: string; status: TaskStatus }> {
+): Promise<{ taskId: string; status: TaskStatus; imageUrl?: string }> {
   const { apiBaseUrl } = getSettings();
   // 使用 OpenAI 兼容接口
   const url = `${apiBaseUrl}/chat/completions`;
@@ -805,21 +805,28 @@ export async function createGeminiImage(
     const rawData = await response.json();
     console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
     
-    // 从响应中提取图片 URL
-    const imageUrl = rawData.choices?.[0]?.message?.content || 
-                     rawData.image_url || 
-                     rawData.url;
+    // Gemini 返回的图片在 choices[0].message.content (base64) 或 image_url
+    let imageUrl = null;
     
-    if (imageUrl) {
-      return {
-        taskId: generateId(),
-        status: 'completed' as TaskStatus,
-      };
+    // 检查是否是 base64 图片数据
+    const content = rawData.choices?.[0]?.message?.content;
+    if (content && (content.startsWith('data:image') || content.startsWith('http'))) {
+      imageUrl = content;
     }
-
+    
+    // 或者检查其他可能的字段
+    if (!imageUrl) {
+      imageUrl = rawData.image_url || 
+                 rawData.url || 
+                 rawData.data?.[0]?.url;
+    }
+    
+    const taskId = generateId();
+    
     return {
-      taskId: rawData.id || generateId(),
-      status: mapGeminiStatus(rawData.status || 'completed'),
+      taskId,
+      status: 'completed' as TaskStatus,
+      imageUrl, // 返回图片 URL 或 base64
     };
   } catch (error) {
     console.error('[API] 图像生成失败:', error);

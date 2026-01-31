@@ -165,10 +165,39 @@ function App() {
           );
 
           // 图像生成完成（Gemini 是同步返回）
-          if (result.status === 'completed') {
-            // 这里需要从响应中获取图片 URL
-            // 由于 Gemini API 设计不同，可能需要特殊处理
+          if (result.status === 'completed' && result.imageUrl) {
             console.log('[App] 图像生成完成:', result);
+            
+            // 更新任务状态为完成，并保存图片 URL
+            setTasks(prev => prev.map(t =>
+              t.id === task.id ? {
+                ...t,
+                status: 'completed',
+                videoUrl: result.imageUrl, // 复用 videoUrl 字段存储图片 URL
+                progress: 100
+              } : t
+            ));
+
+            // 添加到历史记录
+            addHistory({
+              id: task.id,
+              prompt: promptText,
+              model: data.model as VideoModel,
+              createdAt: new Date(),
+              videoUrl: result.imageUrl,
+              thumbnailUrl: result.imageUrl,
+              options: {
+                subModel: data.geminiSubModel,
+                aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
+                resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
+              },
+              generationType: 'image',
+            });
+          } else {
+            // 生成失败
+            setTasks(prev => prev.map(t =>
+              t.id === task.id ? { ...t, status: 'failed', errorMessage: '图像生成失败' } : t
+            ));
           }
           
           continue; // 跳过后续视频轮询逻辑
