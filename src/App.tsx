@@ -5,7 +5,17 @@ import { CanvasWorkspace } from './components/layout/CanvasWorkspace';
 import { BottomEditor } from './components/layout/BottomEditor';
 import { RightRail } from './components/layout/RightRail';
 import { PromptTemplates } from './components/PromptTemplates';
-import { VideoTask, VideoModel, VeoSubModel, SoraSubModel, GrokSubModel, AppSettings } from './types';
+import { 
+  VideoTask, 
+  VideoModel, 
+  ImageModel,
+  VeoSubModel, 
+  SoraSubModel, 
+  GrokSubModel, 
+  GeminiSubModel,
+  GenerationType,
+  AppSettings 
+} from './types';
 import { getApiKey, setApiKey as setApiKeyToStorage, getSettings, setSettings as setSettingsToStorage, getTasks as getTasksFromStorage, setTasks as setTasksToStorage, addTask as addTaskToStorage } from './services/storage';
 import {
   createVeoVideo,
@@ -23,16 +33,19 @@ import { generateId } from './utils/constants';
 type NavItemType = 'generate' | 'templates' | 'tasks' | 'history' | 'settings';
 
 interface GenerateData {
-  model: VideoModel;
+  generationType: GenerationType;
+  model: VideoModel | ImageModel;
   veoSubModel: VeoSubModel;
   soraSubModel: SoraSubModel;
   grokSubModel: GrokSubModel;
+  geminiSubModel: GeminiSubModel;
   prompts: string[];
   imageData?: string;
   imageData2?: string;
   imageType?: 'reference' | 'start-end';
   aspectRatio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
   duration: number;
+  resolution: string;
   negativePrompt: string;
 }
 
@@ -44,11 +57,13 @@ function App() {
   const [tasks, setTasks] = useState<VideoTask[]>(getTasksFromStorage());
   const [selectedTask, setSelectedTask] = useState<VideoTask | null>(null);
 
-  // Model settings
-  const [model, setModel] = useState<VideoModel>(appSettings.defaultModel);
+  // Generation type and model settings
+  const [generationType, setGenerationType] = useState<GenerationType>(appSettings.defaultGenerationType || 'video');
+  const [model, setModel] = useState<VideoModel | ImageModel>(appSettings.defaultModel);
   const [veoSubModel, setVeoSubModel] = useState<VeoSubModel>(appSettings.defaultVeoSubModel);
   const [soraSubModel, setSoraSubModel] = useState<SoraSubModel>(appSettings.defaultSoraSubModel);
   const [grokSubModel, setGrokSubModel] = useState<GrokSubModel>(appSettings.defaultGrokSubModel);
+  const [geminiSubModel, setGeminiSubModel] = useState<GeminiSubModel>(appSettings.defaultGeminiSubModel || 'gemini-3-pro-image-preview');
   const [batchMode, setBatchMode] = useState(false);
   const [globalPrompt, setGlobalPrompt] = useState('');
 
@@ -57,9 +72,22 @@ function App() {
     setTasksToStorage(tasks);
   }, [tasks]);
 
-  const handleModelChange = useCallback((newModel: VideoModel) => {
+  const handleGenerationTypeChange = useCallback((type: GenerationType) => {
+    setGenerationType(type);
+    updateSettings({ defaultGenerationType: type });
+    // Switch to appropriate default model when changing type
+    if (type === 'image') {
+      setModel('gemini-3-pro');
+      updateSettings({ defaultModel: 'gemini-3-pro' as VideoModel });
+    } else {
+      setModel('veo');
+      updateSettings({ defaultModel: 'veo' });
+    }
+  }, []);
+
+  const handleModelChange = useCallback((newModel: VideoModel | ImageModel) => {
     setModel(newModel);
-    updateSettings({ defaultModel: newModel });
+    updateSettings({ defaultModel: newModel as VideoModel });
   }, []);
 
   const handleVeoSubModelChange = useCallback((subModel: VeoSubModel) => {
@@ -75,6 +103,11 @@ function App() {
   const handleGrokSubModelChange = useCallback((subModel: GrokSubModel) => {
     setGrokSubModel(subModel);
     updateSettings({ defaultGrokSubModel: subModel });
+  }, []);
+
+  const handleGeminiSubModelChange = useCallback((subModel: GeminiSubModel) => {
+    setGeminiSubModel(subModel);
+    updateSettings({ defaultGeminiSubModel: subModel });
   }, []);
 
   const updateSettings = (updates: Partial<AppSettings>) => {
@@ -173,7 +206,7 @@ function App() {
 
         const pollResult = await pollTaskStatus(
           apiKey,
-          data.model,
+          data.model as VideoModel,
           result.taskId,
           subModel,
           (status, progress) => {
@@ -200,7 +233,7 @@ function App() {
           addHistory({
             id: task.id,
             prompt: promptText,
-            model: data.model,
+            model: data.model as VideoModel,
             createdAt: new Date(),
             videoUrl: finalVideoUrl,
             thumbnailUrl: finalThumbnailUrl,
@@ -230,7 +263,7 @@ function App() {
     return {
       id: generateId(),
       prompt: promptText,
-      model: data.model,
+      model: data.model as VideoModel,
       status: 'pending',
       createdAt: new Date(),
       progress: 0,
@@ -250,15 +283,18 @@ function App() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar
+          generationType={generationType}
           model={model}
           veoSubModel={veoSubModel}
           soraSubModel={soraSubModel}
           grokSubModel={grokSubModel}
+          geminiSubModel={geminiSubModel}
           batchMode={batchMode}
           onModelChange={handleModelChange}
           onVeoSubModelChange={handleVeoSubModelChange}
           onSoraSubModelChange={handleSoraSubModelChange}
           onGrokSubModelChange={handleGrokSubModelChange}
+          onGeminiSubModelChange={handleGeminiSubModelChange}
           onBatchModeChange={setBatchMode}
         />
 
@@ -382,12 +418,15 @@ function App() {
       {activeNav === 'generate' && (
         <BottomEditor
           apiKey={apiKey}
+          generationType={generationType}
           model={model}
           veoSubModel={veoSubModel}
           soraSubModel={soraSubModel}
           grokSubModel={grokSubModel}
+          geminiSubModel={geminiSubModel}
           batchMode={batchMode}
           onGenerate={handleGenerate}
+          onGenerationTypeChange={handleGenerationTypeChange}
           initialPrompt={globalPrompt}
           onPromptUsed={() => setGlobalPrompt('')}
         />
