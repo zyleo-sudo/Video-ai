@@ -24,6 +24,7 @@ import {
   createSoraVideoWithImage,
   createGrokVideo,
   createGrokVideoWithImage,
+  createGeminiImage,
   pollTaskStatus,
 } from './services/allapi';
 import { addHistory } from './services/storage';
@@ -146,6 +147,34 @@ function App() {
       addTaskToStorage(task);
 
       try {
+        // 图像生成
+        if (data.generationType === 'image') {
+          console.log('[App] 开始图像生成，模型:', data.model);
+          
+          const geminiOptions = {
+            aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
+            resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
+            negativePrompt: data.negativePrompt,
+          };
+
+          const result = await createGeminiImage(
+            apiKey,
+            promptText,
+            data.geminiSubModel,
+            geminiOptions
+          );
+
+          // 图像生成完成（Gemini 是同步返回）
+          if (result.status === 'completed') {
+            // 这里需要从响应中获取图片 URL
+            // 由于 Gemini API 设计不同，可能需要特殊处理
+            console.log('[App] 图像生成完成:', result);
+          }
+          
+          continue; // 跳过后续视频轮询逻辑
+        }
+
+        // 视频生成
         const veoOptions = {
           aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
           duration: data.duration,
