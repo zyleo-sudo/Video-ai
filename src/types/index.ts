@@ -1,5 +1,11 @@
+// Generation types
+export type GenerationType = 'video' | 'image';
+
 // Video generation models
 export type VideoModel = 'veo' | 'sora' | 'grok';
+
+// Image generation models
+export type ImageModel = 'gemini-3-pro';
 
 // Veo sub-model types (OpenAI format)
 export type VeoSubModel = 'veo_3_1' | 'veo_3_1-fast' | 'veo_3_1-fast-4K' | 'veo_3_1-pro';
@@ -10,7 +16,10 @@ export type SoraSubModel = 'sora-2-all';
 // Grok sub-model types
 export type GrokSubModel = 'grok-video-3';
 
-// Video generation status
+// Gemini sub-model types
+export type GeminiSubModel = 'gemini-3-pro-image-preview';
+
+// Generation status
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 // Veo generation options
@@ -39,6 +48,15 @@ export interface GrokOptions {
   audioEnabled?: boolean; // 音画同出
 }
 
+// Gemini image generation options
+export interface GeminiOptions {
+  subModel?: GeminiSubModel;
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  resolution?: '720P' | '1080P' | '2K' | '4K';
+  negativePrompt?: string;
+  seed?: number;
+}
+
 // Video generation task
 export interface VideoTask {
   id: string;
@@ -51,9 +69,10 @@ export interface VideoTask {
   thumbnailUrl?: string;
   errorMessage?: string;
   progress?: number;
-  options?: VeoOptions | SoraOptions | GrokOptions;
+  options?: VeoOptions | SoraOptions | GrokOptions | GeminiOptions;
   imageData?: string; // base64 image for image-to-video
   position?: { x: number; y: number }; // position on the canvas
+  generationType?: GenerationType; // 'video' or 'image'
 }
 
 // History record
@@ -65,7 +84,8 @@ export interface HistoryRecord {
   videoUrl: string;
   thumbnailUrl?: string;
   duration?: number;
-  options?: VeoOptions | SoraOptions | GrokOptions;
+  options?: VeoOptions | SoraOptions | GrokOptions | GeminiOptions;
+  generationType?: GenerationType;
 }
 
 // Download item
@@ -106,10 +126,13 @@ export interface AppSettings {
   apiKey: string;
   autoDownload: boolean;
   maxConcurrentTasks: number;
+  defaultGenerationType: GenerationType;
   defaultModel: VideoModel;
+  defaultImageModel: ImageModel;
   defaultVeoSubModel: VeoSubModel;
   defaultSoraSubModel: SoraSubModel;
   defaultGrokSubModel: GrokSubModel;
+  defaultGeminiSubModel: GeminiSubModel;
   defaultAspectRatio: string;
   apiBaseUrl: string;
 }

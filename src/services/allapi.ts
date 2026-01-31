@@ -666,6 +666,183 @@ export async function optimizePrompt(
   }
 }
 
+// Batch optimize prompts - generate 5 variations
+export async function batchOptimizePrompts(
+  apiKey: string,
+  prompt: string,
+  model: string = 'gpt-4o-mini'
+): Promise<string[]> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/chat/completions`;
+
+  const requestBody = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: '你是一个专业的AI绘画提示词优化专家。用户的请求是同一个场景的批量生成，需要你生成5个不同角度/构图/风格的变体提示词。\n\n要求：\n1. 保持核心主题一致\n2. 每个变体在以下方面有所不同：\n   - 构图角度（特写/中景/远景）\n   - 光线氛围（清晨/黄昏/阴天/晴天）\n   - 艺术风格（写实/油画/水彩/赛博朋克等）\n   - 色彩调性（暖色/冷色/黑白/高饱和等）\n   - 情绪氛围（宁静/激烈/神秘/温馨等）\n3. 每个提示词详细且完整\n4. 用中文输出\n5. 直接返回5个提示词，用 "---" 分隔，不要有其他内容'
+      },
+      {
+        role: 'user',
+        content: `请为以下场景生成5个不同版本的绘画提示词：${prompt}`
+      }
+    ],
+    temperature: 0.9,
+    max_tokens: 2000,
+  };
+
+  console.log('[API] 调用批量提示词优化');
+  console.log('[API] 原始提示词:', prompt);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(error.message || `API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || prompt;
+    
+    // 解析返回的内容，用 "---" 分隔
+    const prompts = content.split('---').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
+    
+    // 如果解析不到5个，就返回原始提示词的5个副本
+    if (prompts.length < 2) {
+      // 尝试用换行符分隔
+      const lines = content.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 10);
+      if (lines.length >= 2) {
+        return lines.slice(0, 5);
+      }
+      // 如果还是不够，返回优化后的提示词和原始提示词的组合
+      return [content, prompt, prompt, prompt, prompt].slice(0, 5);
+    }
+    
+    return prompts.slice(0, 5);
+  } catch (error) {
+    console.error('[API] 批量提示词优化失败:', error);
+    // 失败时返回原始提示词的5个副本
+    return [prompt, prompt, prompt, prompt, prompt];
+  }
+}
+
+// Create Gemini image generation task
+export async function createGeminiImage(
+  apiKey: string,
+  prompt: string,
+  subModel: string = 'gemini-3-pro-image-preview',
+  options: {
+    aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+    resolution?: '720P' | '1080P' | '2K' | '4K';
+    negativePrompt?: string;
+  } = {}
+): Promise<{ taskId: string; status: TaskStatus }> {
+  const { apiBaseUrl } = getSettings();
+  // 使用 OpenAI 兼容接口
+  const url = `${apiBaseUrl}/chat/completions`;
+
+  // 转换宽高比为分辨率
+  const resolutionMap: Record<string, string> = {
+    '720P': '1280x720',
+    '1080P': '1920x1080',
+    '2K': '2048x2048',
+    '4K': '4096x4096',
+  };
+
+  const size = resolutionMap[options.resolution || '2K'] || '2048x2048';
+
+  const requestBody = {
+    model: subModel,
+    messages: [
+      {
+        role: 'user',
+        content: prompt
+      }
+    ],
+    extra_body: {
+      response_modalities: ["image"],
+      size: size,
+      aspect_ratio: options.aspectRatio || '1:1',
+      negative_prompt: options.negativePrompt || '',
+    },
+    temperature: 0.7,
+  };
+
+  console.log('[API] 调用 Gemini 图像生成 API');
+  console.log('[API] URL:', url);
+  console.log('[API] 模型:', subModel);
+  console.log('[API] 提示词:', prompt);
+  console.log('[API] 参数:', { size, aspectRatio: options.aspectRatio || '1:1' });
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    console.log('[API] 响应状态:', response.status, response.statusText);
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: response.statusText }));
+      console.error('[API] 错误响应:', error);
+      throw new Error(error.message || `API error: ${response.status}`);
+    }
+
+    const rawData = await response.json();
+    console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+    
+    // 从响应中提取图片 URL
+    const imageUrl = rawData.choices?.[0]?.message?.content || 
+                     rawData.image_url || 
+                     rawData.url;
+    
+    if (imageUrl) {
+      return {
+        taskId: generateId(),
+        status: 'completed' as TaskStatus,
+      };
+    }
+
+    return {
+      taskId: rawData.id || generateId(),
+      status: mapGeminiStatus(rawData.status || 'completed'),
+    };
+  } catch (error) {
+    console.error('[API] 图像生成失败:', error);
+    throw error;
+  }
+}
+
+function mapGeminiStatus(status: string): TaskStatus {
+  const statusMap: Record<string, TaskStatus> = {
+    pending: 'pending',
+    processing: 'processing',
+    succeeded: 'completed',
+    completed: 'completed',
+    failed: 'failed',
+  };
+  return statusMap[status] || 'completed';
+}
+
+// Generate unique ID for image tasks
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
 // Validate API key
 export async function validateApiKey(apiKey: string): Promise<boolean> {
   try {

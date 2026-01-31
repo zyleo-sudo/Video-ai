@@ -1,4 +1,4 @@
-import { VideoModel, AppSettings, VeoSubModel, SoraSubModel, GrokSubModel } from '../types';
+import { VideoModel, ImageModel, AppSettings, VeoSubModel, SoraSubModel, GrokSubModel, GeminiSubModel } from '../types';
 
 // ALLAPI configuration
 export const ALLAPI_BASE_URL = 'https://allapi.store/v1';
@@ -65,15 +65,31 @@ export const GROK_SUB_MODELS: Record<GrokSubModel, {
   },
 };
 
+// Gemini sub-model configurations
+export const GEMINI_SUB_MODELS: Record<GeminiSubModel, {
+  name: string;
+  priceLabel: string;
+  description: string;
+}> = {
+  'gemini-3-pro-image-preview': {
+    name: 'Gemini 3 Pro',
+    priceLabel: '¥¥',
+    description: 'Nano Banana 2升级版 - 支持2K/4K - 原生多模态',
+  },
+};
+
 // Default settings
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: '',
   autoDownload: false,
   maxConcurrentTasks: 3,
+  defaultGenerationType: 'video',
   defaultModel: 'veo',
+  defaultImageModel: 'gemini-3-pro',
   defaultVeoSubModel: 'veo_3_1-fast',
   defaultSoraSubModel: 'sora-2-all',
   defaultGrokSubModel: 'grok-video-3',
+  defaultGeminiSubModel: 'gemini-3-pro-image-preview',
   defaultAspectRatio: '16:9',
   apiBaseUrl: 'https://allapi.store/v1',
 };
@@ -113,6 +129,29 @@ export const MODEL_CONFIGS: Record<VideoModel, {
     supportsImage: true,
   },
 };
+
+// Image model configurations
+export const IMAGE_MODEL_CONFIGS: Record<ImageModel, {
+  name: string;
+  supportedAspectRatios: string[];
+  supportedResolutions: string[];
+  description: string;
+}> = {
+  'gemini-3-pro': {
+    name: 'Gemini 3 Pro',
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
+    supportedResolutions: ['720P', '1080P', '2K', '4K'],
+    description: 'Nano Banana 2升级版 - 2K/4K输出',
+  },
+};
+
+// Resolution options for image generation
+export const IMAGE_RESOLUTION_OPTIONS = [
+  { value: '720P', label: '720P', width: 1280, height: 720 },
+  { value: '1080P', label: '1080P', width: 1920, height: 1080 },
+  { value: '2K', label: '2K (2048×2048)', width: 2048, height: 2048 },
+  { value: '4K', label: '4K', width: 4096, height: 4096 },
+];
 
 // Duration options by model
 export const DURATION_OPTIONS = {
