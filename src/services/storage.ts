@@ -53,7 +53,17 @@ export function getHistory(): HistoryRecord[] {
 
 export function addHistory(record: HistoryRecord): void {
   const history = getHistory();
-  history.unshift(record); // Add to beginning
+
+  // 对于 base64 图片，不保存到历史记录（避免 localStorage 配额溢出）
+  const recordToSave = { ...record };
+  if (recordToSave.videoUrl?.startsWith('data:')) {
+    recordToSave.videoUrl = '';
+  }
+  if (recordToSave.thumbnailUrl?.startsWith('data:')) {
+    recordToSave.thumbnailUrl = '';
+  }
+
+  history.unshift(recordToSave); // Add to beginning
   // Keep only last 100 records
   if (history.length > 100) {
     history.pop();
