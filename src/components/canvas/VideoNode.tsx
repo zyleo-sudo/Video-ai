@@ -92,30 +92,43 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                 <div className="relative aspect-video bg-gray-900 rounded-xl mb-3 overflow-hidden border border-gray-100/20 shadow-inner group/media">
                     {(task.status === 'completed' && task.videoUrl) ? (
                         <>
-                            <video
-                                src={task.videoUrl}
-                                className="w-full h-full object-cover"
-                                muted
-                                loop
-                                playsInline
-                                onMouseOver={(e) => e.currentTarget.play()}
-                                onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
-                            />
+                            {/* 判断是图片还是视频 */}
+                            {task.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg|data:image)/i) || task.generationType === 'image' ? (
+                                // 图片显示
+                                <img
+                                    src={task.videoUrl}
+                                    className="w-full h-full object-cover"
+                                    alt={task.prompt}
+                                />
+                            ) : (
+                                // 视频显示
+                                <video
+                                    src={task.videoUrl}
+                                    className="w-full h-full object-cover"
+                                    muted
+                                    loop
+                                    playsInline
+                                    onMouseOver={(e) => e.currentTarget.play()}
+                                    onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+                                />
+                            )}
                             {/* Overlay Controls */}
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/media:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-3">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); window.open(task.videoUrl, '_blank'); }}
                                     className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center hover:bg-white/40 transition-all transform hover:scale-110"
-                                    title="全屏播放"
+                                    title={task.generationType === 'image' ? "查看图片" : "全屏播放"}
                                 >
-                                    <span className="text-white text-lg">▶</span>
+                                    <span className="text-white text-lg">{task.generationType === 'image' ? '👁' : '▶'}</span>
                                 </button>
                                 <a
                                     href={task.videoUrl}
-                                    download={`video-${task.id}.mp4`}
+                                    download={task.generationType === 'image' 
+                                        ? `image-${task.id}.png` 
+                                        : `video-${task.id}.mp4`}
                                     onClick={(e) => e.stopPropagation()}
                                     className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center hover:bg-white/40 transition-all transform hover:scale-110"
-                                    title="下载视频"
+                                    title={task.generationType === 'image' ? "下载图片" : "下载视频"}
                                 >
                                     <span className="text-white text-lg">↓</span>
                                 </a>
@@ -141,7 +154,9 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center">
-                                    <span className="text-3xl opacity-20 group-hover:opacity-40 transition-opacity">🎬</span>
+                                    <span className="text-3xl opacity-20 group-hover:opacity-40 transition-opacity">
+                                        {task.generationType === 'image' ? '🎨' : '🎬'}
+                                    </span>
                                     <span className="text-[10px] text-gray-400 mt-2 font-medium uppercase tracking-widest">Pending</span>
                                 </div>
                             )}
