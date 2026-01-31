@@ -16,8 +16,8 @@ import {
   GEMINI_SUB_MODELS 
 } from '../../utils/constants';
 
-// 版本号 - 从构建时注入
-const APP_VERSION = 'v1.0.1';
+// 版本�?- 从构建时注入
+const APP_VERSION = 'v1.0.2';
 
 interface TopBarProps {
   generationType: GenerationType;
