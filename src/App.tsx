@@ -325,11 +325,14 @@ function App() {
       status: 'pending',
       createdAt: new Date(),
       progress: 0,
-      options: data.model === 'veo'
-        ? { subModel: data.veoSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, negativePrompt: data.negativePrompt, imageType: data.imageType }
-        : data.model === 'grok'
-          ? { subModel: data.grokSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, audioEnabled: true }
-          : { subModel: data.soraSubModel, aspectRatio: data.aspectRatio, duration: data.duration },
+      generationType: data.generationType,
+      options: data.generationType === 'image'
+        ? { subModel: data.geminiSubModel, aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4', resolution: data.resolution as '720P' | '1080P' | '2K' | '4K' }
+        : data.model === 'veo'
+          ? { subModel: data.veoSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, negativePrompt: data.negativePrompt, imageType: data.imageType }
+          : data.model === 'grok'
+            ? { subModel: data.grokSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, audioEnabled: true }
+            : { subModel: data.soraSubModel, aspectRatio: data.aspectRatio, duration: data.duration },
       imageData: data.imageData,
       position: { x: 100 + (Math.random() * 200), y: 100 + (Math.random() * 200) },
     };
