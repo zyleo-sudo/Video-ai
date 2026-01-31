@@ -750,15 +750,31 @@ export async function createGeminiImage(
   // 使用 OpenAI 兼容接口
   const url = `${apiBaseUrl}/chat/completions`;
 
-  // 转换宽高比为分辨率
-  const resolutionMap: Record<string, string> = {
-    '720P': '1280x720',
-    '1080P': '1920x1080',
-    '2K': '2048x2048',
-    '4K': '4096x4096',
-  };
+  // 根据宽高比和分辨率计算正确的尺寸
+  function calculateSize(res: string, ratio: string): string {
+    const baseRes: Record<string, number> = {
+      '720P': 720,
+      '1080P': 1080,
+      '2K': 1440,
+      '4K': 2160,
+    };
+    const height = baseRes[res] || 1440;
 
-  const size = resolutionMap[options.resolution || '2K'] || '2048x2048';
+    const ratioMap: Record<string, { w: number; h: number }> = {
+      '1:1': { w: 1, h: 1 },
+      '16:9': { w: 16, h: 9 },
+      '9:16': { w: 9, h: 16 },
+      '4:3': { w: 4, h: 3 },
+      '3:4': { w: 3, h: 4 },
+    };
+
+    const r = ratioMap[ratio] || { w: 1, h: 1 };
+    const width = Math.round(height * (r.w / r.h));
+
+    return `${width}x${height}`;
+  }
+
+  const size = calculateSize(options.resolution || '2K', options.aspectRatio || '1:1');
 
   const requestBody = {
     model: subModel,
