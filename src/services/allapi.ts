@@ -824,6 +824,13 @@ export async function createGeminiImage(
       if (content.startsWith('data:image') || content.startsWith('http')) {
         imageUrl = content;
       }
+      // 检查 Markdown 格式: ![alt](url)
+      else if (content.includes('![') && content.includes('](')) {
+        const match = content.match(/!\[.*?\]\(([^)]+)\)/);
+        if (match && match[1]) {
+          imageUrl = match[1];
+        }
+      }
     }
 
     // 或者检查其他可能的字段
