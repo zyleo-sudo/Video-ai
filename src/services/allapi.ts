@@ -747,8 +747,6 @@ export async function createGeminiImage(
   } = {}
 ): Promise<{ taskId: string; status: TaskStatus; imageUrl?: string }> {
   const { apiBaseUrl } = getSettings();
-  // 使用 OpenAI 兼容接口
-  const url = `${apiBaseUrl}/chat/completions`;
 
   // 根据宽高比和分辨率计算正确的尺寸
   function calculateSize(res: string, ratio: string): string {
@@ -775,26 +773,27 @@ export async function createGeminiImage(
   }
 
   const size = calculateSize(options.resolution || '2K', options.aspectRatio || '1:1');
+  const aspectRatio = options.aspectRatio || '1:1';
 
-  const requestBody = {
+  // 尝试使用专门的图像生成 API (/images/generations)
+  let url = `${apiBaseUrl}/images/generations`;
+  let requestBody: any = {
     model: subModel,
-    messages: [
-      {
-        role: 'user',
-        content: prompt
-      }
-    ],
-    response_modalities: ["image"],
+    prompt: prompt,
     size: size,
-    aspect_ratio: options.aspectRatio || '1:1',
-    negative_prompt: options.negativePrompt || '',
-    temperature: 0.7,
+    n: 1,
   };
 
-  console.log('[API] 调用 Gemini 图像生成 API');
+  // 如果 API 支持 aspect_ratio 参数
+  if (aspectRatio !== '16:9') {
+    requestBody.aspect_ratio = aspectRatio;
+  }
+
+  console.log('[API] 尝试使用 /images/generations 端点');
   console.log('[API] URL:', url);
   console.log('[API] 模型:', subModel);
   console.log('[API] 提示词:', prompt);
+  console.log('[API] 参数:', { size, aspectRatio });
   console.log('[API] 请求体:', JSON.stringify(requestBody, null, 2));
 
   try {
@@ -810,6 +809,44 @@ export async function createGeminiImage(
 
     console.log('[API] 响应状态:', response.status, response.statusText);
 
+    // 如果 /images/generations 不支持，回退到 /chat/completions
+    if (response.status === 404 || response.status === 400) {
+      console.log('[API] /images/generations 不支持，回退到 /chat/completions');
+
+      url = `${apiBaseUrl}/chat/completions`;
+      requestBody = {
+        model: subModel,
+        messages: [{ role: 'user', content: prompt }],
+        response_modalities: ['image'],
+        size: size,
+        aspect_ratio: aspectRatio,
+        negative_prompt: options.negativePrompt || '',
+        temperature: 0.7,
+      };
+
+      console.log('[API] Fallback 请求体:', JSON.stringify(requestBody, null, 2));
+
+      const fallbackResponse = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!fallbackResponse.ok) {
+        const error = await fallbackResponse.json().catch(() => ({ message: fallbackResponse.statusText }));
+        console.error('[API] Fallback 也失败:', error);
+        throw new Error(error.message || `API error: ${fallbackResponse.status}`);
+      }
+
+      const rawData = await fallbackResponse.json();
+      console.log('[API] Fallback 响应成功');
+      return parseImageResponse(rawData);
+    }
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: response.statusText }));
       console.error('[API] 错误响应:', error);
@@ -818,13 +855,26 @@ export async function createGeminiImage(
 
     const rawData = await response.json();
     console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
-    
-    // Gemini 返回的图片在 choices[0].message.content (base64) 或 image_url
-    let imageUrl = null;
+    return parseImageResponse(rawData);
 
+  } catch (error) {
+    console.error('[API] 图像生成失败:', error);
+    throw error;
+  }
+}
+
+// 解析图片响应
+function parseImageResponse(rawData: any): { taskId: string; status: TaskStatus; imageUrl?: string } {
+  let imageUrl = null;
+
+  // 检查 /images/generations 标准格式 (data 数组)
+  if (rawData.data && Array.isArray(rawData.data) && rawData.data[0]?.url) {
+    imageUrl = rawData.data[0].url;
+  }
+  // 检查 /chat/completions 格式
+  else {
     const content = rawData.choices?.[0]?.message?.content;
 
-    // 检查 content 是否是数组格式（OpenAI 图像 API 标准格式）
     if (Array.isArray(content)) {
       for (const item of content) {
         if (item.type === 'image_url' && item.image_url?.url) {
@@ -832,14 +882,10 @@ export async function createGeminiImage(
           break;
         }
       }
-    }
-    // 检查是否是直接的字符串 URL（data:image 或 http）
-    else if (content && typeof content === 'string') {
+    } else if (content && typeof content === 'string') {
       if (content.startsWith('data:image') || content.startsWith('http')) {
         imageUrl = content;
-      }
-      // 检查 Markdown 格式: ![alt](url)
-      else if (content.includes('![') && content.includes('](')) {
+      } else if (content.includes('![') && content.includes('](')) {
         const match = content.match(/!\[.*?\]\(([^)]+)\)/);
         if (match && match[1]) {
           imageUrl = match[1];
@@ -847,26 +893,19 @@ export async function createGeminiImage(
       }
     }
 
-    // 或者检查其他可能的字段
     if (!imageUrl) {
-      imageUrl = rawData.image_url ||
-                 rawData.url ||
-                 rawData.data?.[0]?.url;
+      imageUrl = rawData.image_url || rawData.url;
     }
-
-    console.log('[API] 解析后的图片 URL:', imageUrl ? imageUrl.substring(0, 100) + '...' : 'null');
-    
-    const taskId = generateId();
-    
-    return {
-      taskId,
-      status: 'completed' as TaskStatus,
-      imageUrl, // 返回图片 URL 或 base64
-    };
-  } catch (error) {
-    console.error('[API] 图像生成失败:', error);
-    throw error;
   }
+
+  console.log('[API] 解析后的图片 URL:', imageUrl ? imageUrl.substring(0, 100) + '...' : 'null');
+
+  const taskId = generateId();
+  return {
+    taskId,
+    status: 'completed' as TaskStatus,
+    imageUrl,
+  };
 }
 
 // Generate unique ID for image tasks

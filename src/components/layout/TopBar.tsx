@@ -17,7 +17,7 @@ import {
 } from '../../utils/constants';
 
 // 版本�?- 从构建时注入
-const APP_VERSION = 'v1.0.6';
+const APP_VERSION = 'v1.0.7';
 
 interface TopBarProps {
   generationType: GenerationType;
