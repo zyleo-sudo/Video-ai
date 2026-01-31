@@ -54,6 +54,39 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
         };
     }, [isDragging]);
 
+    const handleDownload = (task: VideoTask) => {
+        if (!task.videoUrl) return;
+
+        const filename = task.generationType === 'image'
+            ? `image-${task.id}.png`
+            : `video-${task.id}.mp4`;
+
+        // 如果是 base64 图片数据，使用 fetch 和 blob 下载
+        if (task.videoUrl.startsWith('data:image')) {
+            try {
+                const link = document.createElement('a');
+                link.href = task.videoUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } catch (error) {
+                console.error('[VideoNode] Base64 下载失败:', error);
+                // 如果 base64 下载失败，尝试在新窗口打开
+                window.open(task.videoUrl, '_blank');
+            }
+        } else {
+            // 普通链接下载
+            const link = document.createElement('a');
+            link.href = task.videoUrl;
+            link.download = filename;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
     return (
         <div
             ref={nodeRef}
@@ -93,12 +126,18 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                     {(task.status === 'completed' && task.videoUrl) ? (
                         <>
                             {/* 判断是图片还是视频 */}
-                            {task.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg|data:image)/i) || task.generationType === 'image' ? (
+                            {(task.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)/i) || 
+                              task.videoUrl?.startsWith('data:image') || 
+                              task.generationType === 'image') ? (
                                 // 图片显示
                                 <img
                                     src={task.videoUrl}
                                     className="w-full h-full object-cover"
                                     alt={task.prompt}
+                                    onError={(e) => {
+                                        console.error('[VideoNode] 图片加载失败:', task.videoUrl);
+                                        e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100%25" height="100%25"%3E%3Crect fill="%23374151" width="100%25" height="100%25"/%3E%3Ctext fill="%239CA3AF" font-family="Arial" font-size="14" x="50%25" y="50%25" text-anchor="middle"%3EImage Failed%3C/text%3E%3C/svg%3E';
+                                    }}
                                 />
                             ) : (
                                 // 视频显示
@@ -121,17 +160,16 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                                 >
                                     <span className="text-white text-lg">{task.generationType === 'image' ? '👁' : '▶'}</span>
                                 </button>
-                                <a
-                                    href={task.videoUrl}
-                                    download={task.generationType === 'image' 
-                                        ? `image-${task.id}.png` 
-                                        : `video-${task.id}.mp4`}
-                                    onClick={(e) => e.stopPropagation()}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDownload(task);
+                                    }}
                                     className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center hover:bg-white/40 transition-all transform hover:scale-110"
                                     title={task.generationType === 'image' ? "下载图片" : "下载视频"}
                                 >
                                     <span className="text-white text-lg">↓</span>
-                                </a>
+                                </button>
                             </div>
                         </>
                     ) : (

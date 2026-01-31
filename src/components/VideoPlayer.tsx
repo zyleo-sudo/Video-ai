@@ -6,12 +6,19 @@ interface VideoPlayerProps {
   title?: string;
   className?: string;
   onDownload?: () => void;
+  isImage?: boolean; // 标识是否为图片
 }
 
-export function VideoPlayer({ src, thumbnail, title, className = '', onDownload }: VideoPlayerProps) {
+export function VideoPlayer({ src, thumbnail, title, className = '', onDownload, isImage }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+
+  const handleError = () => {
+    setError(true);
+    setIsPlaying(false);
+  };
 
   useEffect(() => {
     if (videoRef.current) {
@@ -23,10 +30,40 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload 
     }
   }, [isPlaying]);
 
-  const handleError = () => {
-    setError(true);
-    setIsPlaying(false);
-  };
+  // 如果是图片类型，直接渲染图片
+  if (isImage && src) {
+    return (
+      <div className={`relative bg-black rounded-lg overflow-hidden group ${className}`}>
+        <img
+          ref={imageRef}
+          src={src}
+          alt={title}
+          className="w-full h-full object-cover"
+          onError={handleError}
+        />
+
+        {/* Title overlay */}
+        {title && (
+          <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+            <p className="text-white text-sm font-medium truncate">{title}</p>
+          </div>
+        )}
+
+        {/* Download button */}
+        {onDownload && (
+          <button
+            onClick={onDownload}
+            className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Download image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </button>
+        )}
+      </div>
+    );
+  }
 
   if (!src && !thumbnail) {
     return (
@@ -48,7 +85,7 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload 
           <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-sm">Failed to load video</p>
+          <p className="text-sm">Failed to load media</p>
         </div>
       </div>
     );

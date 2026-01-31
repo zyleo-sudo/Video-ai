@@ -834,17 +834,6 @@ export async function createGeminiImage(
   }
 }
 
-function mapGeminiStatus(status: string): TaskStatus {
-  const statusMap: Record<string, TaskStatus> = {
-    pending: 'pending',
-    processing: 'processing',
-    succeeded: 'completed',
-    completed: 'completed',
-    failed: 'failed',
-  };
-  return statusMap[status] || 'completed';
-}
-
 // Generate unique ID for image tasks
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
