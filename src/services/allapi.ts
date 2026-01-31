@@ -784,12 +784,10 @@ export async function createGeminiImage(
         content: prompt
       }
     ],
-    extra_body: {
-      response_modalities: ["image"],
-      size: size,
-      aspect_ratio: options.aspectRatio || '1:1',
-      negative_prompt: options.negativePrompt || '',
-    },
+    response_modalities: ["image"],
+    size: size,
+    aspect_ratio: options.aspectRatio || '1:1',
+    negative_prompt: options.negativePrompt || '',
     temperature: 0.7,
   };
 
@@ -797,7 +795,7 @@ export async function createGeminiImage(
   console.log('[API] URL:', url);
   console.log('[API] 模型:', subModel);
   console.log('[API] 提示词:', prompt);
-  console.log('[API] 参数:', { size, aspectRatio: options.aspectRatio || '1:1' });
+  console.log('[API] 请求体:', JSON.stringify(requestBody, null, 2));
 
   try {
     const response = await fetch(url, {
