@@ -807,19 +807,33 @@ export async function createGeminiImage(
     
     // Gemini 返回的图片在 choices[0].message.content (base64) 或 image_url
     let imageUrl = null;
-    
-    // 检查是否是 base64 图片数据
+
     const content = rawData.choices?.[0]?.message?.content;
-    if (content && (content.startsWith('data:image') || content.startsWith('http'))) {
-      imageUrl = content;
+
+    // 检查 content 是否是数组格式（OpenAI 图像 API 标准格式）
+    if (Array.isArray(content)) {
+      for (const item of content) {
+        if (item.type === 'image_url' && item.image_url?.url) {
+          imageUrl = item.image_url.url;
+          break;
+        }
+      }
     }
-    
+    // 检查是否是直接的字符串 URL（data:image 或 http）
+    else if (content && typeof content === 'string') {
+      if (content.startsWith('data:image') || content.startsWith('http')) {
+        imageUrl = content;
+      }
+    }
+
     // 或者检查其他可能的字段
     if (!imageUrl) {
-      imageUrl = rawData.image_url || 
-                 rawData.url || 
+      imageUrl = rawData.image_url ||
+                 rawData.url ||
                  rawData.data?.[0]?.url;
     }
+
+    console.log('[API] 解析后的图片 URL:', imageUrl ? imageUrl.substring(0, 100) + '...' : 'null');
     
     const taskId = generateId();
     

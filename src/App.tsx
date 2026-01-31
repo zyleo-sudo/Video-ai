@@ -167,14 +167,17 @@ function App() {
           // 图像生成完成（Gemini 是同步返回）
           if (result.status === 'completed' && result.imageUrl) {
             console.log('[App] 图像生成完成:', result);
-            
+            console.log('[App] 图片 URL:', result.imageUrl.substring(0, 100) + '...');
+            console.log('[App] 任务 generationType:', task.generationType);
+
             // 更新任务状态为完成，并保存图片 URL
             setTasks(prev => prev.map(t =>
               t.id === task.id ? {
                 ...t,
                 status: 'completed',
                 videoUrl: result.imageUrl, // 复用 videoUrl 字段存储图片 URL
-                progress: 100
+                progress: 100,
+                completedAt: new Date(),
               } : t
             ));
 

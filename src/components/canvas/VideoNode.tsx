@@ -15,6 +15,16 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
     const [pos, setPos] = useState(task.position || { x: 100, y: 100 });
     const nodeRef = useRef<HTMLDivElement>(null);
 
+    // 调试日志：检查任务状态
+    useEffect(() => {
+        if (task.status === 'completed' && task.videoUrl) {
+            console.log('[VideoNode] 任务完成:', task.id);
+            console.log('[VideoNode] generationType:', task.generationType);
+            console.log('[VideoNode] videoUrl:', task.videoUrl.substring(0, 80) + '...');
+            console.log('[VideoNode] 是图片?', task.generationType === 'image' || task.videoUrl.startsWith('data:image'));
+        }
+    }, [task.status, task.videoUrl, task.generationType, task.id]);
+
     useEffect(() => {
         if (task.position) {
             setPos(task.position);
@@ -54,14 +64,14 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
         };
     }, [isDragging]);
 
-    const handleDownload = (task: VideoTask) => {
+    const handleDownload = async (task: VideoTask) => {
         if (!task.videoUrl) return;
 
         const filename = task.generationType === 'image'
             ? `image-${task.id}.png`
             : `video-${task.id}.mp4`;
 
-        // 如果是 base64 图片数据，使用 fetch 和 blob 下载
+        // 如果是 base64 图片数据，直接创建链接下载
         if (task.videoUrl.startsWith('data:image')) {
             try {
                 const link = document.createElement('a');
@@ -76,14 +86,31 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                 window.open(task.videoUrl, '_blank');
             }
         } else {
-            // 普通链接下载
-            const link = document.createElement('a');
-            link.href = task.videoUrl;
-            link.download = filename;
-            link.target = '_blank';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // 远程 URL，使用 fetch 获取数据后再下载
+            try {
+                console.log('[VideoNode] 开始下载:', task.videoUrl.substring(0, 50) + '...');
+                const response = await fetch(task.videoUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+
+                // 清理
+                document.body.removeChild(link);
+                URL.revokeObjectURL(blobUrl);
+                console.log('[VideoNode] 下载完成:', filename);
+            } catch (error) {
+                console.error('[VideoNode] 下载失败:', error);
+                // 如果下载失败，尝试在新窗口打开
+                window.open(task.videoUrl, '_blank');
+            }
         }
     };
 

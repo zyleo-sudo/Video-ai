@@ -4,7 +4,8 @@
       "WebSearch",
       "Bash(npx tsc:*)",
       "Bash(npm run dev)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(update.bat)"
     ]
   }
 }
