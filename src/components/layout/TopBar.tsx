@@ -1,29 +1,50 @@
-import { VideoModel, VeoSubModel, SoraSubModel, GrokSubModel } from '../../types';
-import { MODEL_CONFIGS, VEO_SUB_MODELS, SORA_SUB_MODELS, GROK_SUB_MODELS } from '../../utils/constants';
+import { 
+  VideoModel, 
+  ImageModel,
+  VeoSubModel, 
+  SoraSubModel, 
+  GrokSubModel,
+  GeminiSubModel,
+  GenerationType 
+} from '../../types';
+import { 
+  MODEL_CONFIGS, 
+  IMAGE_MODEL_CONFIGS,
+  VEO_SUB_MODELS, 
+  SORA_SUB_MODELS, 
+  GROK_SUB_MODELS,
+  GEMINI_SUB_MODELS 
+} from '../../utils/constants';
 
 interface TopBarProps {
-  model: VideoModel;
+  generationType: GenerationType;
+  model: VideoModel | ImageModel;
   veoSubModel: VeoSubModel;
   soraSubModel: SoraSubModel;
   grokSubModel: GrokSubModel;
+  geminiSubModel: GeminiSubModel;
   batchMode: boolean;
-  onModelChange: (model: VideoModel) => void;
+  onModelChange: (model: VideoModel | ImageModel) => void;
   onVeoSubModelChange: (subModel: VeoSubModel) => void;
   onSoraSubModelChange: (subModel: SoraSubModel) => void;
   onGrokSubModelChange: (subModel: GrokSubModel) => void;
+  onGeminiSubModelChange: (subModel: GeminiSubModel) => void;
   onBatchModeChange: (batchMode: boolean) => void;
 }
 
 export function TopBar({
+  generationType,
   model,
   veoSubModel,
   soraSubModel,
   grokSubModel,
+  geminiSubModel,
   batchMode,
   onModelChange,
   onVeoSubModelChange,
   onSoraSubModelChange,
   onGrokSubModelChange,
+  onGeminiSubModelChange,
   onBatchModeChange,
 }: TopBarProps) {
   return (
@@ -34,14 +55,24 @@ export function TopBar({
         <div className="relative">
           <select
             value={model}
-            onChange={(e) => onModelChange(e.target.value as VideoModel)}
+            onChange={(e) => onModelChange(e.target.value as VideoModel | ImageModel)}
             className="appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 pr-10 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
           >
-            {Object.entries(MODEL_CONFIGS).map(([key, config]) => (
-              <option key={key} value={key}>
-                {config.name}
-              </option>
-            ))}
+            {generationType === 'video' ? (
+              // Video models
+              Object.entries(MODEL_CONFIGS).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.name}
+                </option>
+              ))
+            ) : (
+              // Image models
+              Object.entries(IMAGE_MODEL_CONFIGS).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.name}
+                </option>
+              ))
+            )}
           </select>
           <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,8 +81,8 @@ export function TopBar({
           </div>
         </div>
 
-        {/* Sub-model Selector */}
-        {model === 'veo' && (
+        {/* Sub-model Selector - Video Models */}
+        {generationType === 'video' && model === 'veo' && (
           <div className="relative">
             <select
               value={veoSubModel}
@@ -72,7 +103,7 @@ export function TopBar({
           </div>
         )}
 
-        {model === 'sora' && (
+        {generationType === 'video' && model === 'sora' && (
           <div className="relative">
             <select
               value={soraSubModel}
@@ -93,7 +124,7 @@ export function TopBar({
           </div>
         )}
 
-        {model === 'grok' && (
+        {generationType === 'video' && model === 'grok' && (
           <div className="relative">
             <select
               value={grokSubModel}
@@ -101,6 +132,28 @@ export function TopBar({
               className="appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 pr-10 text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
             >
               {Object.entries(GROK_SUB_MODELS).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.name}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        )}
+
+        {/* Sub-model Selector - Image Models */}
+        {generationType === 'image' && model === 'gemini-3-pro' && (
+          <div className="relative">
+            <select
+              value={geminiSubModel}
+              onChange={(e) => onGeminiSubModelChange(e.target.value as GeminiSubModel)}
+              className="appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 pr-10 text-sm font-semibold text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent cursor-pointer"
+            >
+              {Object.entries(GEMINI_SUB_MODELS).map(([key, config]) => (
                 <option key={key} value={key}>
                   {config.name}
                 </option>
