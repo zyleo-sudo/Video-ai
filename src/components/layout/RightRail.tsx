@@ -1,4 +1,5 @@
-import { VideoTask } from '../../types';
+import { useState } from 'react';
+import { VideoTask, HistoryRecord } from '../../types';
 import { getHistory } from '../../services/storage';
 
 interface RightRailProps {
@@ -9,6 +10,7 @@ interface RightRailProps {
 
 export function RightRail({ selectedTask, onTaskClick, onPromptSelect }: RightRailProps) {
   const history = getHistory();
+  const [previewItem, setPreviewItem] = useState<HistoryRecord | null>(null);
 
   return (
     <div className="fixed right-0 top-16 bottom-0 w-80 bg-white border-l border-gray-200 flex flex-col z-30 shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.05)]">
@@ -44,13 +46,13 @@ export function RightRail({ selectedTask, onTaskClick, onPromptSelect }: RightRa
 
             <div className="pt-4 border-t border-gray-100">
               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">生成历史</h4>
-              <HistoryList history={history} onSelect={onTaskClick} onPromptSelect={onPromptSelect} />
+              <HistoryList history={history} onSelect={onTaskClick} onPromptSelect={onPromptSelect} onPreview={setPreviewItem} />
             </div>
           </div>
         ) : (
           <div className="p-5">
             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">最近记录</h4>
-            <HistoryList history={history} onSelect={(item) => onTaskClick(item as any)} onPromptSelect={onPromptSelect} />
+            <HistoryList history={history} onSelect={(item) => onTaskClick(item as any)} onPromptSelect={onPromptSelect} onPreview={setPreviewItem} />
           </div>
         )}
       </div>
@@ -62,11 +64,57 @@ export function RightRail({ selectedTask, onTaskClick, onPromptSelect }: RightRa
           <span className="font-bold text-gray-900">{history.length} 个视频</span>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {previewItem && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200]"
+          onClick={() => setPreviewItem(null)}
+        >
+          <div 
+            className="bg-gray-900 rounded-2xl overflow-hidden max-w-4xl max-h-[90vh] w-full mx-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-800">
+              <h3 className="text-white font-semibold">
+                {previewItem.generationType === 'image' ? '图片预览' : '视频预览'}
+              </h3>
+              <button 
+                onClick={() => setPreviewItem(null)}
+                className="text-gray-400 hover:text-white p-1"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4">
+              {(previewItem.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) || 
+                previewItem.videoUrl?.startsWith('data:image') || 
+                previewItem.generationType === 'image') ? (
+                <img 
+                  src={previewItem.videoUrl} 
+                  className="max-w-full max-h-[70vh] mx-auto rounded-lg"
+                  alt={previewItem.prompt}
+                />
+              ) : (
+                <video 
+                  src={previewItem.videoUrl}
+                  className="w-full max-h-[70vh] rounded-lg"
+                  controls
+                  autoPlay
+                />
+              )}
+              <p className="text-gray-400 mt-4 text-sm line-clamp-2">{previewItem.prompt}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function HistoryList({ history, onSelect, onPromptSelect }: { history: any[], onSelect: (item: any) => void, onPromptSelect: (prompt: string) => void }) {
+function HistoryList({ history, onSelect, onPromptSelect, onPreview }: { history: any[], onSelect: (item: any) => void, onPromptSelect: (prompt: string) => void, onPreview?: (item: any) => void }) {
   if (history.length === 0) {
     return (
       <div className="text-center py-10 opacity-30">
@@ -84,7 +132,13 @@ function HistoryList({ history, onSelect, onPromptSelect }: { history: any[], on
           onClick={() => onSelect(item)}
           className="group flex gap-3 p-2 rounded-xl hover:bg-blue-50 transition-all cursor-pointer border border-transparent hover:border-blue-100"
         >
-          <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200">
+          <div 
+            className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPreview?.(item);
+            }}
+          >
             {item.thumbnailUrl ? (
               <img src={item.thumbnailUrl} className="w-full h-full object-cover" />
             ) : item.videoUrl ? (

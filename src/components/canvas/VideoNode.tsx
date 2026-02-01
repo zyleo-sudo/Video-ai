@@ -13,6 +13,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [pos, setPos] = useState(task.position || { x: 100, y: 100 });
+    const [showPreview, setShowPreview] = useState(false);
     const nodeRef = useRef<HTMLDivElement>(null);
 
     // 调试日志：检查任务状态
@@ -115,6 +116,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
     };
 
     return (
+        <>
         <div
             ref={nodeRef}
             className={`absolute group select-none transition-shadow duration-300 ${isDragging ? 'z-50' : 'z-10'}`}
@@ -181,9 +183,9 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                             {/* Overlay Controls */}
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/media:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-3">
                                 <button
-                                    onClick={(e) => { e.stopPropagation(); window.open(task.videoUrl, '_blank'); }}
+                                    onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
                                     className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center hover:bg-white/40 transition-all transform hover:scale-110"
-                                    title={task.generationType === 'image' ? "查看图片" : "全屏播放"}
+                                    title={task.generationType === 'image' ? "查看图片" : "预览播放"}
                                 >
                                     <span className="text-white text-lg">{task.generationType === 'image' ? '👁' : '▶'}</span>
                                 </button>
@@ -249,5 +251,52 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
             <div className="absolute top-1/2 -left-1 w-2 h-2 bg-blue-400 rounded-full border border-white opacity-0 group-hover:opacity-100 transition-opacity translate-x-1 group-hover:translate-x-0"></div>
             <div className="absolute top-1/2 -right-1 w-2 h-2 bg-blue-400 rounded-full border border-white opacity-0 group-hover:opacity-100 transition-opacity -translate-x-1 group-hover:translate-x-0"></div>
         </div>
+
+        {/* Preview Modal */}
+        {showPreview && task.videoUrl && (
+            <div 
+                className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200]"
+                onClick={() => setShowPreview(false)}
+            >
+                <div 
+                    className="bg-gray-900 rounded-2xl overflow-hidden max-w-4xl max-h-[90vh] w-full mx-4 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex items-center justify-between p-4 border-b border-gray-800">
+                        <h3 className="text-white font-semibold">
+                            {task.generationType === 'image' ? '图片预览' : '视频预览'}
+                        </h3>
+                        <button 
+                            onClick={() => setShowPreview(false)}
+                            className="text-gray-400 hover:text-white p-1"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div className="p-4">
+                        {(task.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) || 
+                          task.videoUrl?.startsWith('data:image') || 
+                          task.generationType === 'image') ? (
+                            <img 
+                                src={task.videoUrl} 
+                                className="max-w-full max-h-[70vh] mx-auto rounded-lg"
+                                alt={task.prompt}
+                            />
+                        ) : (
+                            <video 
+                                src={task.videoUrl}
+                                className="w-full max-h-[70vh] rounded-lg"
+                                controls
+                                autoPlay
+                            />
+                        )}
+                        <p className="text-gray-400 mt-4 text-sm line-clamp-2">{task.prompt}</p>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }

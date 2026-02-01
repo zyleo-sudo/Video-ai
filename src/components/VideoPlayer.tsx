@@ -104,10 +104,13 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload,
         controls
       />
 
-      {/* Custom overlay for thumbnail */}
+      {/* Custom overlay for thumbnail - click to open in new tab */}
       {!src && thumbnail && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-          <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center cursor-pointer hover:bg-white transition-colors">
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
+          onClick={() => thumbnail && window.open(thumbnail, '_blank')}
+        >
+          <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center hover:bg-white transition-colors">
             <svg className="w-8 h-8 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
