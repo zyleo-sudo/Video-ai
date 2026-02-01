@@ -5,7 +5,29 @@
       "Bash(npx tsc:*)",
       "Bash(npm run dev)",
       "Bash(curl:*)",
-      "Bash(update.bat)"
+      "Bash(update.bat)",
+      "Bash(cd:*)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" status)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" diff src/services/allapi.ts)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" log --oneline -5)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" add src/services/allapi.ts)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"$\\(cat <<''EOF''\nfix: parse Markdown format image URL from API response\n\nThe API returns image URLs wrapped in Markdown syntax like ![image]\\(url\\).\nAdded regex parsing to extract the URL properly, fixing image display\nand download issues for generated images.\nEOF\n\\)\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" push)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" add VERSION package.json)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"release: bump version to v1.0.4\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"$\\(cat <<''EOF''\nfix: calculate image size based on both resolution and aspect ratio\n\nThe API was using resolution-based size without considering aspect ratio,\ncausing 1:1 images to be generated as 16:9 when using 720P/1080P resolution.\nNow size is calculated dynamically from both resolution and aspect ratio.\nEOF\n\\)\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"release: bump version to v1.0.5\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" add src/components/layout/TopBar.tsx)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"fix: update version display to v1.0.5\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" add src/services/storage.ts)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"$\\(cat <<''EOF''\nfix: skip base64 images in history to prevent localStorage quota overflow\n\nBase64 images are very large \\(several MB each\\) and storing them in\nlocalStorage quickly exceeds the quota. Now base64 data is replaced\nwith empty strings in history records.\nEOF\n\\)\")",
+      "Bash(cmd.exe /c \"E:\\\\Programs\\\\video-ai\\\\update.bat\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" add VERSION package.json src/components/layout/TopBar.tsx)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"release: bump version to v1.0.6\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"$\\(cat <<''EOF''\nfix: move image params to top level for API compatibility\n\nMoved size, aspect_ratio, and other params from extra_body to top\nlevel of request body for better OpenAI API compatibility.\nEOF\n\\)\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" add VERSION package.json src/components/layout/TopBar.tsx src/services/allapi.ts)",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"release: bump version to v1.0.7\")",
+      "Bash(git -C \"E:\\\\Programs\\\\video-ai\" commit -m \"release: bump version to v1.0.8\")"
     ]
   }
 }
