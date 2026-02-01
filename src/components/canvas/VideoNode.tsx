@@ -255,7 +255,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
         {/* Preview Modal */}
         {showPreview && task.videoUrl && (
             <div 
-                className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200]"
+                className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]"
                 onClick={() => setShowPreview(false)}
             >
                 <div 

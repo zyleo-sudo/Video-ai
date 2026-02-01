@@ -97,11 +97,12 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload,
         ref={videoRef}
         src={src}
         poster={thumbnail}
-        className="w-full h-full"
+        className="w-full h-full relative z-10"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onError={handleError}
         controls
+        onClick={(e) => e.stopPropagation()}
       />
 
       {/* Custom overlay for thumbnail - click to open in new tab */}
