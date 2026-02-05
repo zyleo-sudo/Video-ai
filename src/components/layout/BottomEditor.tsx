@@ -60,9 +60,9 @@ const SCENE_OPTIMIZERS = {
     label: '寺庙信仰',
     color: 'amber',
     options: [
-      { name: '金光普照', suffix: '+ 金色光芒普照 + 祥云环绕 + 神圣庄严 + 宏大场景 + 主体突出 + 8K超清' },
-      { name: '闪亮纯净', suffix: '+ 金光闪闪 + 纯净通透 + 香火明亮 + 信仰之光 + 主体放大 + 高清画质' },
-      { name: '宏伟庄严', suffix: '+ 宏伟壮观 + 金碧辉煌 + 大气磅礴 + 个体宏大 + 人群渺小 + 电影级质感' },
+      { name: '佛像宏大', suffix: '+ 佛像巨大宏伟 + 人物渺小仰视 + 金光普照 + 庄严神圣 + 广角镜头 + 仰视视角 + 8K超清' },
+      { name: '女性菩萨', suffix: '+ 女性菩萨庄严形象 + 慈悲微笑 + 金色光芒 + 祥云环绕 + 人物在画面很小 + 佛光普照 + 电影级质感' },
+      { name: '和尚渺小', suffix: '+ 和尚身影渺小 + 虔诚礼佛 + 金碧辉煌背景 + 佛像巨大 + 仰视佛像 + 信仰之光 + 高清画质' },
     ]
   },
   ecommerce: {
@@ -70,9 +70,9 @@ const SCENE_OPTIMIZERS = {
     label: '电商产品',
     color: 'blue',
     options: [
-      { name: '商业精品', suffix: '+ 影棚柔光 + 锐利细节 + 专业三点布光 + 产品摄影 + 商业广告 + 高清质感' },
-      { name: '生活场景', suffix: '+ 自然光 + 温馨氛围 + 明亮通透 + 种草风格 + 产品突出 + 正面积极' },
-      { name: '极简白底', suffix: '+ 纯白背景 + 边缘平滑 + 电商标准 + 主体放大 + 清晰锐利 + 专业拍摄' },
+      { name: '商业精品', suffix: '+ 产品主体突出 + 影棚专业布光 + 锐利细节 + 产品摄影 + 商业广告级 + 动态展示 + VEO优化' },
+      { name: '生活场景', suffix: '+ 产品场景代入 + 自然生活氛围 + 温馨明亮 + 正面积极 + 产品突出 + 情绪价值 + GROK优化' },
+      { name: '极简白底', suffix: '+ 产品主体放大 + 纯白背景 + 电商标准 + 清晰锐利 + 专业静物 + 商业质感 + VEO视频' },
     ]
   },
   creative: {
@@ -80,9 +80,9 @@ const SCENE_OPTIMIZERS = {
     label: '通用创意',
     color: 'purple',
     options: [
-      { name: '梦幻唯美', suffix: '+ 梦幻光晕 + 柔和色调 + 浪漫氛围 + 明亮通透 + 正面积极 + 艺术质感' },
-      { name: '中国古风', suffix: '+ 水墨丹青 + 工笔细腻 + 金色点缀 + 古典韵味 + 宏大构图 + 非遗传承' },
-      { name: '明亮大气', suffix: '+ 阳光明媚 + 开阔大气 + 色彩明亮 + 主体突出 + 正面光影 + 电影质感' },
+      { name: '梦幻唯美', suffix: '+ 梦幻光晕 + 柔和色调 + 浪漫氛围 + 明亮通透 + 正面积极 + 电影感 + VEO动态' },
+      { name: '中国古风', suffix: '+ 水墨丹青 + 工笔细腻 + 金色点缀 + 古典韵味 + 宏大构图 + 非遗传承 + 诗意画面' },
+      { name: '明亮大气', suffix: '+ 阳光明媚 + 开阔大气 + 色彩明亮 + 主体突出 + 正面光影 + 电影质感 + 震撼画面' },
     ]
   }
 };
@@ -183,16 +183,6 @@ export function BottomEditor({
     }
   };
 
-  // 检测场景
-  const detectScene = (text: string): keyof typeof SCENE_OPTIMIZERS | null => {
-    const templeKeywords = ['佛', '寺', '庙', '禅', '观音', '道教', '祈福', '香火', '经文', '神像', '佛像', '塔', '石狮', '菩萨', '罗汉', '金光', '信仰', '神圣', '庄严', '菩萨', '罗汉', '天王', '弥勒', '如来', '燃灯', '法器', '袈裟', '佛光'];
-    const ecommerceKeywords = ['产品', '商品', '宝贝', '店铺', '广告', '卖货', '带货', '模特', '服装', '首饰', '化妆品', '鞋', '包', '电器', '家具', '食品', '数码'];
-
-    if (templeKeywords.some(k => text.includes(k))) return 'temple';
-    if (ecommerceKeywords.some(k => text.includes(k))) return 'ecommerce';
-    return null;
-  };
-
   // 应用场景优化
   const applySceneOptimization = (suffix: string) => {
     setPrompt(prev => prev.trim() ? `${prev} ${suffix}` : prev);
@@ -283,9 +273,6 @@ export function BottomEditor({
       negativePrompt,
     });
   };
-
-  // 检测当前输入的场景
-  const detectedScene = detectScene(prompt);
 
   return (
     <div className="fixed bottom-0 left-20 right-0 bg-white border-t border-gray-200 p-6 z-50">
@@ -410,11 +397,6 @@ export function BottomEditor({
                 placeholder={generationType === 'image' ? "描述您想要生成的图像..." : "描述您想要生成的视频内容..."}
                 rows={3}
                 className="w-full px-4 py-3 pr-36 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
-                onFocus={() => {
-                  if (prompt && detectedScene) {
-                    setShowScenePanel(true);
-                  }
-                }}
               />
               {/* AI Optimize Buttons */}
               <div className="absolute top-2 right-2 flex gap-1">
@@ -444,39 +426,41 @@ export function BottomEditor({
               </div>
             </div>
 
-            {/* 场景优化快捷按钮 */}
+            {/* 场景优化快捷按钮 - 手动点击触发 */}
             <div className="mt-2 flex flex-wrap gap-2">
               {Object.entries(SCENE_OPTIMIZERS).map(([key, scene]) => (
                 <div key={key} className="relative">
                   <button
                     onClick={() => setShowScenePanel(!showScenePanel)}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
-                      detectedScene === key
+                      showScenePanel
                         ? 'bg-amber-50 text-amber-600 border-2 border-amber-300'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
                     <span>{scene.icon}</span>
                     <span>{scene.label}</span>
-                    {detectedScene === key && <span className="text-[10px]">✓</span>}
+                    <svg className={`w-3 h-3 transition-transform ${showScenePanel ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </button>
 
                   {/* 场景选项下拉面板 */}
                   {showScenePanel && (
-                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3 min-w-[280px] z-50">
+                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3 min-w-[320px] z-50">
                       <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
                         <span>{scene.icon}</span>
-                        <span>选择{scene.label}风格</span>
+                        <span>选择{scene.label}风格（点击应用）</span>
                       </div>
                       <div className="space-y-2">
                         {scene.options.map((opt, idx) => (
                           <button
                             key={idx}
                             onClick={() => applySceneOptimization(opt.suffix)}
-                            className="w-full text-left px-3 py-2 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="w-full text-left px-3 py-2 text-xs bg-gray-50 hover:bg-amber-50 rounded-lg transition-colors border border-transparent hover:border-amber-200"
                           >
                             <span className="font-semibold text-gray-700">{opt.name}</span>
-                            <span className="text-gray-400 ml-2 truncate block">{opt.suffix.substring(0, 30)}...</span>
+                            <span className="text-gray-400 ml-2">{opt.suffix}</span>
                           </button>
                         ))}
                       </div>
