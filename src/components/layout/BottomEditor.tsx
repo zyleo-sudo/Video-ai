@@ -53,6 +53,40 @@ interface BatchPrompt {
   prompt: string;
 }
 
+// 场景化优化配置
+const SCENE_OPTIMIZERS = {
+  temple: {
+    icon: '🏯',
+    label: '寺庙信仰',
+    color: 'amber',
+    options: [
+      { name: '庄严神圣', suffix: '+ 金色神圣光环 + 香火缭绕 + 祥云环绕 + 电影级质感 + 8K超清' },
+      { name: '禅意宁静', suffix: '+ 晨雾 + 禅意留白 + 古树 + 光影交错 + 新海诚风格' },
+      { name: '神秘深邃', suffix: '+ 千年古刹 + 苔藓 + 历史感 + 幽深静谧 + 国风水墨' },
+    ]
+  },
+  ecommerce: {
+    icon: '🛒',
+    label: '电商产品',
+    color: 'blue',
+    options: [
+      { name: '商业精品', suffix: '+ 影棚柔光 + 锐利细节 + 专业三点布光 + 产品摄影 + 商业广告' },
+      { name: '生活场景', suffix: '+ 自然光 + 场景代入 + 温馨氛围 + 种草风格 + 情绪价值' },
+      { name: '极简白底', suffix: '+ 纯白背景 + 边缘平滑 + 电商标准 + 高清质感 + 突出主体' },
+    ]
+  },
+  creative: {
+    icon: '✨',
+    label: '通用创意',
+    color: 'purple',
+    options: [
+      { name: '梦幻唯美', suffix: '+ 梦幻光晕 + 柔和色调 + 浪漫氛围 + 电影感 + 艺术质感' },
+      { name: '科技未来', suffix: '+ 赛博朋克 + LED灯光 + 霓虹效果 + 未来科技感 + 硬表面渲染' },
+      { name: '中国风', suffix: '+ 水墨丹青 + 工笔画 + 留白 + 古典韵味 + 非遗传承' },
+    ]
+  }
+};
+
 export function BottomEditor({
   apiKey,
   generationType,
@@ -79,12 +113,13 @@ export function BottomEditor({
   const [batchPrompts, setBatchPrompts] = useState<BatchPrompt[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isBatchOptimizing, setIsBatchOptimizing] = useState(false);
+  const [showScenePanel, setShowScenePanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
 
   // Filter aspect ratios based on generation type
   const availableAspectRatios = generationType === 'image' 
-    ? ASPECT_RATIOS // Image supports all ratios
+    ? ASPECT_RATIOS 
     : ASPECT_RATIOS.filter(ar => ar.value === '16:9' || ar.value === '9:16' || ar.value === '1:1');
 
   // Duration options for video only
@@ -148,6 +183,22 @@ export function BottomEditor({
     }
   };
 
+  // 检测场景
+  const detectScene = (text: string): keyof typeof SCENE_OPTIMIZERS | null => {
+    const templeKeywords = ['佛', '寺', '庙', '禅', '观音', '道教', '祈福', '香火', '经文', '神像', '佛像', '塔', '石狮', '菩萨', '罗汉'];
+    const ecommerceKeywords = ['产品', '商品', '宝贝', '店铺', '广告', '卖货', '带货', '模特', '服装', '首饰', '化妆品', '鞋', '包', '电器'];
+
+    if (templeKeywords.some(k => text.includes(k))) return 'temple';
+    if (ecommerceKeywords.some(k => text.includes(k))) return 'ecommerce';
+    return null;
+  };
+
+  // 应用场景优化
+  const applySceneOptimization = (suffix: string) => {
+    setPrompt(prev => prev.trim() ? `${prev} ${suffix}` : prev);
+    setShowScenePanel(false);
+  };
+
   const handleOptimizePrompt = useCallback(async () => {
     if (!prompt.trim()) {
       alert('请先输入提示词');
@@ -166,7 +217,6 @@ export function BottomEditor({
     }
   }, [prompt, apiKey]);
 
-  // Batch optimize - generate 5 variations
   const handleBatchOptimize = useCallback(async () => {
     if (!prompt.trim()) {
       alert('请先输入基础提示词');
@@ -176,7 +226,6 @@ export function BottomEditor({
     setIsBatchOptimizing(true);
     try {
       const variations = await batchOptimizePrompts(apiKey, prompt);
-      // Add all variations to batch prompts
       const newBatchPrompts = variations.map((variation) => ({
         id: generateId(),
         prompt: variation,
@@ -235,6 +284,9 @@ export function BottomEditor({
     });
   };
 
+  // 检测当前输入的场景
+  const detectedScene = detectScene(prompt);
+
   return (
     <div className="fixed bottom-0 left-20 right-0 bg-white border-t border-gray-200 p-6 z-50">
       <div className="max-w-6xl mx-auto">
@@ -262,7 +314,7 @@ export function BottomEditor({
           </button>
         </div>
 
-        {/* Image/Video Upload - Only for Video models (Veo, Grok) or Image with img2img */}
+        {/* Image/Video Upload */}
         {generationType === 'video' && (model === 'veo' || model === 'grok') && (
           <div className="flex items-center gap-2 mb-4">
             <button
@@ -350,48 +402,88 @@ export function BottomEditor({
 
         {/* Prompt Input */}
         {!batchMode ? (
-          <div className="mb-4 relative">
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder={generationType === 'image' ? "描述您想要生成的图像..." : "描述您想要生成的视频内容..."}
-              rows={3}
-              className="w-full px-4 py-3 pr-32 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
-            />
-            {/* AI Optimize Buttons */}
-            <div className="absolute top-2 right-2 flex gap-1">
-              <button
-                onClick={handleOptimizePrompt}
-                disabled={isOptimizing || !prompt.trim()}
-                className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all ${
-                  isOptimizing || !prompt.trim()
-                    ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                    : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                }`}
-              >
-                {isOptimizing ? (
-                  <span className="flex items-center gap-1">
-                    <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    优化中
-                  </span>
-                ) : (
-                  <span>AI优化</span>
-                )}
-              </button>
-              <button
-                onClick={handleBatchOptimize}
-                disabled={isBatchOptimizing || !prompt.trim()}
-                className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all ${
-                  isBatchOptimizing || !prompt.trim()
-                    ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                    : 'text-purple-600 bg-purple-50 hover:bg-purple-100'
-                }`}
-                title="一键生成5个不同风格的变体"
-              >
-                {isBatchOptimizing ? '生成中...' : '批量×5'}
-              </button>
+          <div className="mb-4">
+            <div className="relative">
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={generationType === 'image' ? "描述您想要生成的图像..." : "描述您想要生成的视频内容..."}
+                rows={3}
+                className="w-full px-4 py-3 pr-36 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
+                onFocus={() => {
+                  if (prompt && detectedScene) {
+                    setShowScenePanel(true);
+                  }
+                }}
+              />
+              {/* AI Optimize Buttons */}
+              <div className="absolute top-2 right-2 flex gap-1">
+                <button
+                  onClick={handleOptimizePrompt}
+                  disabled={isOptimizing || !prompt.trim()}
+                  className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all ${
+                    isOptimizing || !prompt.trim()
+                      ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                      : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                  }`}
+                >
+                  {isOptimizing ? '优化中...' : 'AI优化'}
+                </button>
+                <button
+                  onClick={handleBatchOptimize}
+                  disabled={isBatchOptimizing || !prompt.trim()}
+                  className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all ${
+                    isBatchOptimizing || !prompt.trim()
+                      ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                      : 'text-purple-600 bg-purple-50 hover:bg-purple-100'
+                  }`}
+                  title="一键生成5个不同风格的变体"
+                >
+                  {isBatchOptimizing ? '生成中...' : '批量×5'}
+                </button>
+              </div>
+            </div>
+
+            {/* 场景优化快捷按钮 */}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {Object.entries(SCENE_OPTIMIZERS).map(([key, scene]) => (
+                <div key={key} className="relative">
+                  <button
+                    onClick={() => setShowScenePanel(!showScenePanel)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
+                      detectedScene === key
+                        ? 'bg-amber-50 text-amber-600 border-2 border-amber-300'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>{scene.icon}</span>
+                    <span>{scene.label}</span>
+                    {detectedScene === key && <span className="text-[10px]">✓</span>}
+                  </button>
+
+                  {/* 场景选项下拉面板 */}
+                  {showScenePanel && (
+                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3 min-w-[280px] z-50">
+                      <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                        <span>{scene.icon}</span>
+                        <span>选择{scene.label}风格</span>
+                      </div>
+                      <div className="space-y-2">
+                        {scene.options.map((opt, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => applySceneOptimization(opt.suffix)}
+                            className="w-full text-left px-3 py-2 text-xs bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <span className="font-semibold text-gray-700">{opt.name}</span>
+                            <span className="text-gray-400 ml-2 truncate block">{opt.suffix.substring(0, 30)}...</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         ) : (
