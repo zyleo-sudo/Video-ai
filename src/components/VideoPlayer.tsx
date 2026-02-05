@@ -126,12 +126,16 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload,
         </div>
       )}
 
-      {/* Download button */}
+      {/* Download button - always visible and on top */}
       {src && onDownload && (
         <button
-          onClick={onDownload}
-          className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Download video"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onDownload();
+          }}
+          className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-blue-600 rounded-lg text-white z-50 pointer-events-auto shadow-lg"
+          title="下载视频"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

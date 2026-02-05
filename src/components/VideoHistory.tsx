@@ -13,6 +13,8 @@ export function VideoHistory({ onPromptSelect }: VideoHistoryProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<HistoryRecord | null>(null);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBatchMode, setIsBatchMode] = useState(false);
 
   const filteredRecords = useMemo(() => {
     if (!searchQuery.trim()) return records;
@@ -87,10 +89,41 @@ export function VideoHistory({ onPromptSelect }: VideoHistoryProps) {
   const handleDownload = (record: HistoryRecord) => {
     const link = document.createElement('a');
     link.href = record.videoUrl;
-    link.download = `video-${record.id}.mp4`;
+    link.download = `${record.generationType === 'image' ? 'image' : 'video'}-${record.id}.${record.generationType === 'image' ? 'png' : 'mp4'}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleBatchDownload = async () => {
+    const selectedRecords = records.filter(r => selectedIds.has(r.id));
+    if (selectedRecords.length === 0) return;
+
+    // 逐个下载，添加延迟避免浏览器阻止
+    for (let i = 0; i < selectedRecords.length; i++) {
+      const record = selectedRecords[i];
+      setTimeout(() => {
+        handleDownload(record);
+      }, i * 500); // 每个间隔500ms
+    }
+
+    // 下载完成后退出批量模式
+    setTimeout(() => {
+      setIsBatchMode(false);
+      setSelectedIds(new Set());
+    }, selectedRecords.length * 500 + 1000);
   };
 
   return (
@@ -117,12 +150,35 @@ export function VideoHistory({ onPromptSelect }: VideoHistoryProps) {
 
         <div className="flex gap-3">
           {records.length > 0 && (
-            <button
-              onClick={() => setShowConfirmClear(true)}
-              className="px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-            >
-              清空全部
-            </button>
+            <>
+              <button
+                onClick={() => setIsBatchMode(!isBatchMode)}
+                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-colors ${
+                  isBatchMode 
+                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {isBatchMode ? '退出批量' : '批量操作'}
+              </button>
+              {isBatchMode && selectedIds.size > 0 && (
+                <button
+                  onClick={handleBatchDownload}
+                  className="px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl hover:shadow-lg transition-all flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  下载选中 ({selectedIds.size})
+                </button>
+              )}
+              <button
+                onClick={() => setShowConfirmClear(true)}
+                className="px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+              >
+                清空全部
+              </button>
+            </>
           )}
           <span className="px-4 py-2.5 text-sm font-semibold text-gray-500 bg-gray-100 rounded-xl">
             {filteredRecords.length} 条记录
@@ -145,12 +201,12 @@ export function VideoHistory({ onPromptSelect }: VideoHistoryProps) {
         <div className="space-y-8">
           {groupedRecords.map(group => (
             <div key={group.title} className="space-y-4">
-              <button
-                onClick={() => toggleGroup(group.title)}
-                className="flex items-center gap-3 group w-full text-left"
-              >
+              <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-gray-200"></div>
-                <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-100 rounded-lg text-xs font-bold text-gray-500 group-hover:bg-gray-200 transition-colors">
+                <button
+                  onClick={() => toggleGroup(group.title)}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-gray-100 rounded-lg text-xs font-bold text-gray-500 hover:bg-gray-200 transition-colors"
+                >
                   <span>{group.title}</span>
                   <span className="opacity-50">({group.records.length})</span>
                   <svg
@@ -159,22 +215,64 @@ export function VideoHistory({ onPromptSelect }: VideoHistoryProps) {
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
                   </svg>
-                </div>
+                </button>
+                {isBatchMode && !collapsedGroups[group.title] && (
+                  <button
+                    onClick={() => {
+                      const allSelected = group.records.every(r => selectedIds.has(r.id));
+                      if (allSelected) {
+                        setSelectedIds(prev => {
+                          const newSet = new Set(prev);
+                          group.records.forEach(r => newSet.delete(r.id));
+                          return newSet;
+                        });
+                      } else {
+                        setSelectedIds(prev => {
+                          const newSet = new Set(prev);
+                          group.records.forEach(r => newSet.add(r.id));
+                          return newSet;
+                        });
+                      }
+                    }}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2 py-1"
+                  >
+                    {group.records.every(r => selectedIds.has(r.id)) ? '取消全选' : '全选'}
+                  </button>
+                )}
                 <div className="h-px flex-1 bg-gray-200"></div>
-              </button>
+              </div>
 
               {!collapsedGroups[group.title] && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 animate-in fade-in slide-in-from-top-2 duration-300">
                   {group.records.map(record => (
                     <div
                       key={record.id}
-                      className="group relative bg-white border-2 border-gray-200 rounded-2xl overflow-hidden hover:border-primary-400 hover:shadow-card transition-all duration-300"
+                      className={`group relative bg-white border-2 rounded-2xl overflow-hidden hover:shadow-card transition-all duration-300 ${
+                        selectedIds.has(record.id) 
+                          ? 'border-blue-500 ring-2 ring-blue-200' 
+                          : 'border-gray-200 hover:border-primary-400'
+                      }`}
                     >
+                      {/* Checkbox for batch mode */}
+                      {isBatchMode && (
+                        <div className="absolute top-3 left-3 z-20">
+                          <label className="flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(record.id)}
+                              onChange={() => toggleSelection(record.id)}
+                              className="w-5 h-5 rounded border-2 border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                          </label>
+                        </div>
+                      )}
+
                       {/* Video thumbnail */}
                       <div className="relative">
                         <VideoPlayer
                           src={record.videoUrl}
                           thumbnail={record.thumbnailUrl}
+                          isImage={record.generationType === 'image'}
                           className="aspect-video"
                           onDownload={() => handleDownload(record)}
                         />
