@@ -60,9 +60,9 @@ const SCENE_OPTIMIZERS = {
     label: '寺庙信仰',
     color: 'amber',
     options: [
-      { name: '庄严神圣', suffix: '+ 金色神圣光环 + 香火缭绕 + 祥云环绕 + 电影级质感 + 8K超清' },
-      { name: '禅意宁静', suffix: '+ 晨雾 + 禅意留白 + 古树 + 光影交错 + 新海诚风格' },
-      { name: '神秘深邃', suffix: '+ 千年古刹 + 苔藓 + 历史感 + 幽深静谧 + 国风水墨' },
+      { name: '金光普照', suffix: '+ 金色光芒普照 + 祥云环绕 + 神圣庄严 + 宏大场景 + 主体突出 + 8K超清' },
+      { name: '闪亮纯净', suffix: '+ 金光闪闪 + 纯净通透 + 香火明亮 + 信仰之光 + 主体放大 + 高清画质' },
+      { name: '宏伟庄严', suffix: '+ 宏伟壮观 + 金碧辉煌 + 大气磅礴 + 个体宏大 + 人群渺小 + 电影级质感' },
     ]
   },
   ecommerce: {
@@ -70,9 +70,9 @@ const SCENE_OPTIMIZERS = {
     label: '电商产品',
     color: 'blue',
     options: [
-      { name: '商业精品', suffix: '+ 影棚柔光 + 锐利细节 + 专业三点布光 + 产品摄影 + 商业广告' },
-      { name: '生活场景', suffix: '+ 自然光 + 场景代入 + 温馨氛围 + 种草风格 + 情绪价值' },
-      { name: '极简白底', suffix: '+ 纯白背景 + 边缘平滑 + 电商标准 + 高清质感 + 突出主体' },
+      { name: '商业精品', suffix: '+ 影棚柔光 + 锐利细节 + 专业三点布光 + 产品摄影 + 商业广告 + 高清质感' },
+      { name: '生活场景', suffix: '+ 自然光 + 温馨氛围 + 明亮通透 + 种草风格 + 产品突出 + 正面积极' },
+      { name: '极简白底', suffix: '+ 纯白背景 + 边缘平滑 + 电商标准 + 主体放大 + 清晰锐利 + 专业拍摄' },
     ]
   },
   creative: {
@@ -80,9 +80,9 @@ const SCENE_OPTIMIZERS = {
     label: '通用创意',
     color: 'purple',
     options: [
-      { name: '梦幻唯美', suffix: '+ 梦幻光晕 + 柔和色调 + 浪漫氛围 + 电影感 + 艺术质感' },
-      { name: '科技未来', suffix: '+ 赛博朋克 + LED灯光 + 霓虹效果 + 未来科技感 + 硬表面渲染' },
-      { name: '中国风', suffix: '+ 水墨丹青 + 工笔画 + 留白 + 古典韵味 + 非遗传承' },
+      { name: '梦幻唯美', suffix: '+ 梦幻光晕 + 柔和色调 + 浪漫氛围 + 明亮通透 + 正面积极 + 艺术质感' },
+      { name: '中国古风', suffix: '+ 水墨丹青 + 工笔细腻 + 金色点缀 + 古典韵味 + 宏大构图 + 非遗传承' },
+      { name: '明亮大气', suffix: '+ 阳光明媚 + 开阔大气 + 色彩明亮 + 主体突出 + 正面光影 + 电影质感' },
     ]
   }
 };
@@ -185,8 +185,8 @@ export function BottomEditor({
 
   // 检测场景
   const detectScene = (text: string): keyof typeof SCENE_OPTIMIZERS | null => {
-    const templeKeywords = ['佛', '寺', '庙', '禅', '观音', '道教', '祈福', '香火', '经文', '神像', '佛像', '塔', '石狮', '菩萨', '罗汉'];
-    const ecommerceKeywords = ['产品', '商品', '宝贝', '店铺', '广告', '卖货', '带货', '模特', '服装', '首饰', '化妆品', '鞋', '包', '电器'];
+    const templeKeywords = ['佛', '寺', '庙', '禅', '观音', '道教', '祈福', '香火', '经文', '神像', '佛像', '塔', '石狮', '菩萨', '罗汉', '金光', '信仰', '神圣', '庄严', '菩萨', '罗汉', '天王', '弥勒', '如来', '燃灯', '法器', '袈裟', '佛光'];
+    const ecommerceKeywords = ['产品', '商品', '宝贝', '店铺', '广告', '卖货', '带货', '模特', '服装', '首饰', '化妆品', '鞋', '包', '电器', '家具', '食品', '数码'];
 
     if (templeKeywords.some(k => text.includes(k))) return 'temple';
     if (ecommerceKeywords.some(k => text.includes(k))) return 'ecommerce';
