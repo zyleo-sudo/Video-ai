@@ -19,6 +19,11 @@ export const VEO_SUB_MODELS: Record<VeoSubModel, {
     priceLabel: '¥¥¥',
     description: '4K高清 - 自动音频生成',
   },
+  'veo_3_1-fast-components': {
+    name: 'Veo 3.1 Fast Components',
+    priceLabel: '¥¥¥',
+    description: '组件模式 - 人物主体清晰',
+  },
   'veo_3_1': {
     name: 'Veo 3.1',
     priceLabel: '¥¥¥¥',
@@ -35,6 +40,7 @@ export const VEO_SUB_MODELS: Record<VeoSubModel, {
 export const VEO_MODEL_ORDER: VeoSubModel[] = [
   'veo_3_1-fast',
   'veo_3_1-fast-4K',
+  'veo_3_1-fast-components',
   'veo_3_1',
   'veo_3_1-pro',
 ];

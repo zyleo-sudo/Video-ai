@@ -8,7 +8,7 @@ export type VideoModel = 'veo' | 'sora' | 'grok';
 export type ImageModel = 'gemini-3-pro';
 
 // Veo sub-model types (OpenAI format)
-export type VeoSubModel = 'veo_3_1' | 'veo_3_1-fast' | 'veo_3_1-fast-4K' | 'veo_3_1-pro';
+export type VeoSubModel = 'veo_3_1' | 'veo_3_1-fast' | 'veo_3_1-fast-4K' | 'veo_3_1-fast-components' | 'veo_3_1-pro';
 
 // Sora sub-model types
 export type SoraSubModel = 'sora-2-all';
