@@ -7,8 +7,21 @@ export type VideoModel = 'veo' | 'sora' | 'grok';
 // Image generation models
 export type ImageModel = 'gemini-3-pro';
 
-// Veo sub-model types (OpenAI format)
-export type VeoSubModel = 'veo_3_1' | 'veo_3_1-fast' | 'veo_3_1-fast-4K' | 'veo_3_1-fast-components' | 'veo_3_1-pro';
+// Veo sub-model types (支持两种 API 格式)
+// OpenAI 格式: veo_3_1, veo_3_1-fast, veo_3_1-fast-4K, veo_3_1-pro
+// 统一格式: veo3.1-fast, veo3.1-pro, veo3.1-4k, veo3.1-fast-components
+export type VeoSubModel = 
+  // OpenAI 格式
+  | 'veo_3_1' 
+  | 'veo_3_1-fast' 
+  | 'veo_3_1-fast-4K' 
+  | 'veo_3_1-pro'
+  // 统一格式
+  | 'veo3.1-fast'
+  | 'veo3.1-pro'
+  | 'veo3.1-4k'
+  | 'veo3.1-pro-4k'
+  | 'veo3.1-fast-components';
 
 // Sora sub-model types
 export type SoraSubModel = 'sora-2-all';

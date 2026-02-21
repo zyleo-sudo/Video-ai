@@ -18,7 +18,7 @@ import {
 } from './types';
 import { getApiKey, setApiKey as setApiKeyToStorage, getSettings, setSettings as setSettingsToStorage, getTasks as getTasksFromStorage, setTasks as setTasksToStorage, addTask as addTaskToStorage } from './services/storage';
 import {
-  createVeoVideo,
+  createVeoVideoAuto,
   createVeoVideoWithImage,
   createSoraVideo,
   createSoraVideoWithImage,
@@ -235,7 +235,7 @@ function App() {
               veoOptions
             );
           } else {
-            result = await createVeoVideo(apiKey, promptText, data.veoSubModel, veoOptions);
+            result = await createVeoVideoAuto(apiKey, promptText, data.veoSubModel, veoOptions);
           }
         } else if (data.model === 'grok') {
           if (data.imageData) {

@@ -6,7 +6,22 @@ import {
   SoraOptions,
   GrokOptions,
   TaskStatus,
+  VeoSubModel,
 } from '../types';
+
+// 统一格式 API 支持的模型列表
+const UNIFIED_FORMAT_MODELS: VeoSubModel[] = [
+  'veo3.1-fast',
+  'veo3.1-pro',
+  'veo3.1-4k',
+  'veo3.1-pro-4k',
+  'veo3.1-fast-components',
+];
+
+// 检查模型是否使用统一格式 API
+function isUnifiedFormat(model: string): boolean {
+  return UNIFIED_FORMAT_MODELS.includes(model as VeoSubModel);
+}
 
 // Create Veo video generation task (OpenAI format)
 export async function createVeoVideo(
@@ -62,6 +77,80 @@ export async function createVeoVideo(
     taskId: rawData.id,
     status: mapVeoStatus(rawData.status),
   };
+}
+
+// Create Veo video generation task (统一格式 /v1/video/create)
+export async function createVeoVideoUnified(
+  apiKey: string,
+  prompt: string,
+  subModel: VeoSubModel,
+  options: Omit<VeoOptions, 'subModel'> = {}
+): Promise<{ taskId: string; status: TaskStatus }> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/video/create`;
+
+  const requestBody: {
+    model: string;
+    prompt: string;
+    aspect_ratio?: string;
+    enhance_prompt?: boolean;
+    images?: string[];
+  } = {
+    model: subModel,
+    prompt: prompt,
+    enhance_prompt: true,
+  };
+
+  // 统一格式使用 aspect_ratio 参数
+  if (options.aspectRatio) {
+    requestBody.aspect_ratio = options.aspectRatio;
+  } else {
+    requestBody.aspect_ratio = '16:9';
+  }
+
+  console.log('[API] 调用 Veo 视频生成 API (统一格式)');
+  console.log('[API] URL:', url);
+  console.log('[API] 子模型:', subModel);
+  console.log('[API] 请求体:', JSON.stringify(requestBody, null, 2));
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  console.log('[API] 响应状态:', response.status, response.statusText);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    console.error('[API] 错误响应:', error);
+    throw new Error(error.message || `API error: ${response.status}`);
+  }
+
+  const rawData = await response.json();
+  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+  return {
+    taskId: rawData.id,
+    status: mapVeoStatus(rawData.status),
+  };
+}
+
+// 统一入口：根据模型自动选择 API 格式
+export async function createVeoVideoAuto(
+  apiKey: string,
+  prompt: string,
+  subModel: VeoSubModel = 'veo_3_1-fast',
+  options: Omit<VeoOptions, 'subModel'> = {}
+): Promise<{ taskId: string; status: TaskStatus }> {
+  if (isUnifiedFormat(subModel)) {
+    return createVeoVideoUnified(apiKey, prompt, subModel, options);
+  } else {
+    return createVeoVideo(apiKey, prompt, subModel, options);
+  }
 }
 
 // Create Veo video with image input (OpenAI format)
@@ -189,6 +278,80 @@ export async function queryVeoTask(
     progress: rawData.progress !== undefined ? rawData.progress : undefined,
     errorMessage: rawData.error?.message || undefined,
   };
+}
+
+// Query Veo task status (统一格式)
+export async function queryVeoTaskUnified(
+  apiKey: string,
+  taskId: string
+): Promise<{
+  status: TaskStatus;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  duration?: number;
+  progress?: number;
+  errorMessage?: string;
+}> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/video/query?id=${taskId}`;
+
+  console.log('[API] 查询 Veo 任务状态 (统一格式)');
+  console.log('[API] URL:', url);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+  });
+
+  console.log('[API] 查询响应状态:', response.status, response.statusText);
+
+  if (!response.ok) {
+    throw new Error(`Failed to query task: ${response.status}`);
+  }
+
+  const rawData = await response.json();
+  console.log('[API] 查询响应原始数据:', JSON.stringify(rawData, null, 2));
+
+  return {
+    status: mapVeoStatus(rawData.status),
+    videoUrl: rawData.video_url || undefined,
+    thumbnailUrl: rawData.cover_url || undefined,
+    progress: undefined,
+    errorMessage: rawData.error?.message || undefined,
+  };
+}
+
+// 统一查询入口：根据 taskId 前缀判断格式
+export async function queryVeoTaskAuto(
+  apiKey: string,
+  taskId: string,
+  model?: VeoSubModel
+): Promise<{
+  status: TaskStatus;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  duration?: number;
+  progress?: number;
+  errorMessage?: string;
+}> {
+  // 如果提供了 model 参数，直接根据模型判断
+  if (model && isUnifiedFormat(model)) {
+    return queryVeoTaskUnified(apiKey, taskId);
+  }
+  
+  // 否则根据 taskId 前缀判断 (统一格式的 taskId 通常包含模型名前缀如 "veo3-fast-frames:")
+  const unifiedPrefixes = ['veo2', 'veo3', 'veo3.1'];
+  const isUnified = unifiedPrefixes.some(prefix => taskId.startsWith(prefix));
+  
+  if (isUnified) {
+    return queryVeoTaskUnified(apiKey, taskId);
+  } else {
+    return queryVeoTask(apiKey, taskId, model);
+  }
 }
 
 // Create Sora video generation task
@@ -502,7 +665,7 @@ export async function pollTaskStatus(
     try {
       const result =
         model === 'veo'
-          ? await queryVeoTask(apiKey, taskId, apiModel || 'veo_3_1-fast-4K')
+          ? await queryVeoTaskAuto(apiKey, taskId, apiModel as VeoSubModel)
           : model === 'grok'
             ? await queryGrokTask(apiKey, taskId, apiModel || 'grok-video-3-10s')
             : await querySoraTask(apiKey, taskId, apiModel || 'sora-2');

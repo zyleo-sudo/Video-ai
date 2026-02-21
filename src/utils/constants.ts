@@ -3,46 +3,86 @@ import { VideoModel, ImageModel, AppSettings, VeoSubModel, SoraSubModel, GrokSub
 // ALLAPI configuration
 export const ALLAPI_BASE_URL = 'https://allapi.store/v1';
 
-// Veo sub-model configurations (OpenAI format)
+// Veo sub-model configurations
+// OpenAI 格式使用 /v1/videos 端点 (FormData)
+// 统一格式使用 /v1/video/create 端点 (JSON)
 export const VEO_SUB_MODELS: Record<VeoSubModel, {
   name: string;
   priceLabel: string;
   description: string;
+  apiFormat: 'openai' | 'unified';  // API 格式类型
 }> = {
+  // OpenAI 格式模型
   'veo_3_1-fast': {
-    name: 'Veo 3.1 Fast',
+    name: 'Veo 3.1 Fast (OpenAI)',
     priceLabel: '¥¥',
     description: '快速模式 - 720p分辨率',
+    apiFormat: 'openai',
   },
   'veo_3_1-fast-4K': {
-    name: 'Veo 3.1 Fast 4K',
+    name: 'Veo 3.1 Fast 4K (OpenAI)',
     priceLabel: '¥¥¥',
     description: '4K高清 - 自动音频生成',
-  },
-  'veo_3_1-fast-components': {
-    name: 'Veo 3.1 Fast Components',
-    priceLabel: '¥¥¥',
-    description: '组件模式 - 人物主体清晰',
+    apiFormat: 'openai',
   },
   'veo_3_1': {
-    name: 'Veo 3.1',
+    name: 'Veo 3.1 (OpenAI)',
     priceLabel: '¥¥¥¥',
     description: '高质量 - 专业级别',
+    apiFormat: 'openai',
   },
   'veo_3_1-pro': {
-    name: 'Veo 3.1 Pro',
+    name: 'Veo 3.1 Pro (OpenAI)',
     priceLabel: '¥¥¥¥¥',
     description: '最高质量 - 专业级别+',
+    apiFormat: 'openai',
+  },
+  // 统一格式模型
+  'veo3.1-fast': {
+    name: 'Veo 3.1 Fast',
+    priceLabel: '¥¥',
+    description: '快速模式 - 自动音频',
+    apiFormat: 'unified',
+  },
+  'veo3.1-pro': {
+    name: 'Veo 3.1 Pro',
+    priceLabel: '¥¥¥¥',
+    description: '高质量 - 专业级别',
+    apiFormat: 'unified',
+  },
+  'veo3.1-4k': {
+    name: 'Veo 3.1 4K',
+    priceLabel: '¥¥¥',
+    description: '4K高清 - 自动音频',
+    apiFormat: 'unified',
+  },
+  'veo3.1-pro-4k': {
+    name: 'Veo 3.1 Pro 4K',
+    priceLabel: '¥¥¥¥¥',
+    description: '最高质量 - 4K输出',
+    apiFormat: 'unified',
+  },
+  'veo3.1-fast-components': {
+    name: 'Veo 3.1 Fast Components',
+    priceLabel: '¥¥¥',
+    description: '组件模式 - 支持多图输入',
+    apiFormat: 'unified',
   },
 };
 
 // Display order for Veo models
 export const VEO_MODEL_ORDER: VeoSubModel[] = [
+  // OpenAI 格式
   'veo_3_1-fast',
   'veo_3_1-fast-4K',
-  'veo_3_1-fast-components',
   'veo_3_1',
   'veo_3_1-pro',
+  // 统一格式
+  'veo3.1-fast',
+  'veo3.1-4k',
+  'veo3.1-pro',
+  'veo3.1-pro-4k',
+  'veo3.1-fast-components',
 ];
 
 // Sora sub-model configurations
