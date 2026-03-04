@@ -161,7 +161,8 @@ function App() {
             apiKey,
             promptText,
             data.geminiSubModel,
-            geminiOptions
+            geminiOptions,
+            data.imageData
           );
 
           // 图像生成完成（Gemini 是同步返回）

@@ -265,8 +265,8 @@ export function BottomEditor({
       geminiSubModel,
       prompts: promptsToProcess,
       imageData: useImage ? imageData : undefined,
-      imageData2: useImage && imageType === 'start-end' ? imageData2 : undefined,
-      imageType: useImage ? imageType : undefined,
+      imageData2: generationType === 'video' && useImage && imageType === 'start-end' ? imageData2 : undefined,
+      imageType: generationType === 'video' && useImage ? imageType : undefined,
       aspectRatio,
       duration,
       resolution,
@@ -302,7 +302,7 @@ export function BottomEditor({
         </div>
 
         {/* Image/Video Upload */}
-        {generationType === 'video' && (model === 'veo' || model === 'grok') && (
+        {(generationType === 'image' || (generationType === 'video' && (model === 'veo' || model === 'grok'))) && (
           <div className="flex items-center gap-2 mb-4">
             <button
               onClick={() => setUseImage(false)}
@@ -321,7 +321,7 @@ export function BottomEditor({
               图片输入
             </button>
 
-            {useImage && (
+            {useImage && generationType === 'video' && (
               <>
                 <div className="h-6 w-px bg-gray-300 mx-2" />
                 <button
@@ -349,9 +349,9 @@ export function BottomEditor({
                   onClick={handleImageSelect}
                   className="ml-2 px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"
                 >
-                  {imageType === 'reference' ? (imageData ? '更换图片' : '选择图片') : '首帧'}
+                  {imageData ? '更换图片' : '选择图片'}
                 </button>
-                {imageType === 'start-end' && (
+                {generationType === 'video' && imageType === 'start-end' && (
                   <button
                     onClick={handleImageSelect2}
                     className="px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"

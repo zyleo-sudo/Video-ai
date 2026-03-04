@@ -907,7 +907,8 @@ export async function createGeminiImage(
     aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
     resolution?: '720P' | '1080P' | '2K' | '4K';
     negativePrompt?: string;
-  } = {}
+  } = {},
+  referenceImageData?: string
 ): Promise<{ taskId: string; status: TaskStatus; imageUrl?: string }> {
   const { apiBaseUrl } = getSettings();
 
@@ -937,6 +938,50 @@ export async function createGeminiImage(
 
   const size = calculateSize(options.resolution || '2K', options.aspectRatio || '1:1');
   const aspectRatio = options.aspectRatio || '1:1';
+
+  if (referenceImageData) {
+    const multimodalUrl = `${apiBaseUrl}/chat/completions`;
+    const multimodalRequestBody = {
+      model: subModel,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: referenceImageData } },
+          ],
+        },
+      ],
+      response_modalities: ['image'],
+      size: size,
+      aspect_ratio: aspectRatio,
+      negative_prompt: options.negativePrompt || '',
+      temperature: 0.7,
+    };
+
+    console.log('[API] Use multimodal image generation with reference image');
+    console.log('[API] URL:', multimodalUrl);
+    console.log('[API] Params:', { size, aspectRatio, hasReferenceImage: true });
+
+    const multimodalResponse = await fetch(multimodalUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(multimodalRequestBody),
+    });
+
+    if (!multimodalResponse.ok) {
+      const error = await multimodalResponse.json().catch(() => ({ message: multimodalResponse.statusText }));
+      console.error('[API] Multimodal image generation failed:', error);
+      throw new Error(error.message || `API error: ${multimodalResponse.status}`);
+    }
+
+    const rawData = await multimodalResponse.json();
+    return parseImageResponse(rawData);
+  }
 
   // 尝试使用专门的图像生成 API (/images/generations)
   let url = `${apiBaseUrl}/images/generations`;
