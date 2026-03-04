@@ -64,7 +64,7 @@ function App() {
   const [veoSubModel, setVeoSubModel] = useState<VeoSubModel>(appSettings.defaultVeoSubModel);
   const [soraSubModel, setSoraSubModel] = useState<SoraSubModel>(appSettings.defaultSoraSubModel);
   const [grokSubModel, setGrokSubModel] = useState<GrokSubModel>(appSettings.defaultGrokSubModel);
-  const [geminiSubModel, setGeminiSubModel] = useState<GeminiSubModel>(appSettings.defaultGeminiSubModel || 'gemini-3-pro-image-preview');
+  const [geminiSubModel, setGeminiSubModel] = useState<GeminiSubModel>(appSettings.defaultGeminiSubModel || 'gemini-3.1-flash-image-preview');
   const [batchMode, setBatchMode] = useState(false);
   const [globalPrompt, setGlobalPrompt] = useState('');
 
@@ -78,8 +78,8 @@ function App() {
     updateSettings({ defaultGenerationType: type });
     // Switch to appropriate default model when changing type
     if (type === 'image') {
-      setModel('gemini-3-pro-image-preview');
-      updateSettings({ defaultModel: 'gemini-3-pro-image-preview' });
+      setModel('gemini-3.1-flash-image-preview');
+      updateSettings({ defaultModel: 'gemini-3.1-flash-image-preview' });
     } else {
       setModel('veo');
       updateSettings({ defaultModel: 'veo' });

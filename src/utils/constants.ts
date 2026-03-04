@@ -117,8 +117,8 @@ export const GEMINI_SUB_MODELS: Record<GeminiSubModel, {
   priceLabel: string;
   description: string;
 }> = {
-  'gemini-3-pro-image-preview': {
-    name: 'Gemini 3 Pro',
+  'gemini-3.1-flash-image-preview': {
+    name: 'Gemini 3.1 Flash Image Preview',
     priceLabel: '¥¥',
     description: 'Nano Banana 2升级版 - 支持2K/4K - 原生多模态',
   },
@@ -131,11 +131,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxConcurrentTasks: 3,
   defaultGenerationType: 'video',
   defaultModel: 'veo',
-  defaultImageModel: 'gemini-3-pro-image-preview',
+  defaultImageModel: 'gemini-3.1-flash-image-preview',
   defaultVeoSubModel: 'veo_3_1-fast',
   defaultSoraSubModel: 'sora-2-all',
   defaultGrokSubModel: 'grok-video-3',
-  defaultGeminiSubModel: 'gemini-3-pro-image-preview',
+  defaultGeminiSubModel: 'gemini-3.1-flash-image-preview',
   defaultAspectRatio: '16:9',
   apiBaseUrl: 'https://allapi.store/v1',
 };
@@ -189,8 +189,8 @@ export const IMAGE_MODEL_CONFIGS: Record<ImageModel, {
     supportedResolutions: ['720P', '1080P', '2K', '4K'],
     description: 'Nano Banana 2升级版 - 2K/4K输出',
   },
-  'gemini-3-pro-image-preview': {
-    name: 'Gemini 3 Pro Image Preview',
+  'gemini-3.1-flash-image-preview': {
+    name: 'Gemini 3.1 Flash Image Preview',
     supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
     supportedResolutions: ['720P', '1080P', '2K', '4K'],
     description: 'Nano Banana Pro image generation and editing model',

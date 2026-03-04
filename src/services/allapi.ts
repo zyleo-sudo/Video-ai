@@ -902,7 +902,7 @@ export async function batchOptimizePrompts(
 export async function createGeminiImage(
   apiKey: string,
   prompt: string,
-  subModel: string = 'gemini-3-pro-image-preview',
+  subModel: string = 'gemini-3.1-flash-image-preview',
   options: {
     aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
     resolution?: '720P' | '1080P' | '2K' | '4K';
@@ -963,24 +963,38 @@ export async function createGeminiImage(
     console.log('[API] URL:', multimodalUrl);
     console.log('[API] Params:', { size, aspectRatio, hasReferenceImage: true });
 
-    const multimodalResponse = await fetch(multimodalUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(multimodalRequestBody),
-    });
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const multimodalResponse = await fetch(multimodalUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(multimodalRequestBody),
+      });
 
-    if (!multimodalResponse.ok) {
+      if (multimodalResponse.ok) {
+        const rawData = await multimodalResponse.json();
+        return parseImageResponse(rawData);
+      }
+
       const error = await multimodalResponse.json().catch(() => ({ message: multimodalResponse.statusText }));
       console.error('[API] Multimodal image generation failed:', error);
+
+      // Retry on rate limit with incremental backoff: 1.5s, 3s
+      if (multimodalResponse.status === 429 && attempt < maxRetries) {
+        await sleep(1500 * (attempt + 1));
+        continue;
+      }
+
+      if (multimodalResponse.status === 429) {
+        throw new Error('API 限流或额度不足（429），请稍后重试或更换可用 Key');
+      }
+
       throw new Error(error.message || `API error: ${multimodalResponse.status}`);
     }
-
-    const rawData = await multimodalResponse.json();
-    return parseImageResponse(rawData);
   }
 
   // 尝试使用专门的图像生成 API (/images/generations)

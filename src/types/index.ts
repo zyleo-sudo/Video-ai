@@ -5,7 +5,7 @@ export type GenerationType = 'video' | 'image';
 export type VideoModel = 'veo' | 'sora' | 'grok';
 
 // Image generation models
-export type ImageModel = 'gemini-3-pro' | 'gemini-3-pro-image-preview';
+export type ImageModel = 'gemini-3-pro' | 'gemini-3.1-flash-image-preview';
 
 // Veo sub-model types (支持两种 API 格式)
 // OpenAI 格式: veo_3_1, veo_3_1-fast, veo_3_1-fast-4K, veo_3_1-pro
@@ -30,7 +30,7 @@ export type SoraSubModel = 'sora-2-all';
 export type GrokSubModel = 'grok-video-3';
 
 // Gemini sub-model types
-export type GeminiSubModel = 'gemini-3-pro-image-preview';
+export type GeminiSubModel = 'gemini-3.1-flash-image-preview';
 
 // Generation status
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';

@@ -19,7 +19,21 @@ export function getSettings(): AppSettings {
   const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
   if (stored) {
     try {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      const raw = JSON.parse(stored) as Record<string, unknown>;
+      const parsed = { ...raw } as Record<string, unknown>;
+
+      // Backward compatibility for old Gemini image model key.
+      if (parsed.defaultModel === 'gemini-3-pro-image-preview') {
+        parsed.defaultModel = 'gemini-3.1-flash-image-preview';
+      }
+      if (parsed.defaultImageModel === 'gemini-3-pro-image-preview') {
+        parsed.defaultImageModel = 'gemini-3.1-flash-image-preview';
+      }
+      if (parsed.defaultGeminiSubModel === 'gemini-3-pro-image-preview') {
+        parsed.defaultGeminiSubModel = 'gemini-3.1-flash-image-preview';
+      }
+
+      return { ...DEFAULT_SETTINGS, ...parsed };
     } catch {
       return DEFAULT_SETTINGS;
     }
