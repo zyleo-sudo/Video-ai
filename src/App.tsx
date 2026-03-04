@@ -78,8 +78,8 @@ function App() {
     updateSettings({ defaultGenerationType: type });
     // Switch to appropriate default model when changing type
     if (type === 'image') {
-      setModel('gemini-3-pro');
-      updateSettings({ defaultModel: 'gemini-3-pro' as VideoModel });
+      setModel('gemini-3-pro-image-preview');
+      updateSettings({ defaultModel: 'gemini-3-pro-image-preview' });
     } else {
       setModel('veo');
       updateSettings({ defaultModel: 'veo' });
@@ -88,7 +88,7 @@ function App() {
 
   const handleModelChange = useCallback((newModel: VideoModel | ImageModel) => {
     setModel(newModel);
-    updateSettings({ defaultModel: newModel as VideoModel });
+    updateSettings({ defaultModel: newModel });
   }, []);
 
   const handleVeoSubModelChange = useCallback((subModel: VeoSubModel) => {

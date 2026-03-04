@@ -131,7 +131,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxConcurrentTasks: 3,
   defaultGenerationType: 'video',
   defaultModel: 'veo',
-  defaultImageModel: 'gemini-3-pro',
+  defaultImageModel: 'gemini-3-pro-image-preview',
   defaultVeoSubModel: 'veo_3_1-fast',
   defaultSoraSubModel: 'sora-2-all',
   defaultGrokSubModel: 'grok-video-3',
@@ -188,6 +188,12 @@ export const IMAGE_MODEL_CONFIGS: Record<ImageModel, {
     supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
     supportedResolutions: ['720P', '1080P', '2K', '4K'],
     description: 'Nano Banana 2升级版 - 2K/4K输出',
+  },
+  'gemini-3-pro-image-preview': {
+    name: 'Gemini 3 Pro Image Preview',
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
+    supportedResolutions: ['720P', '1080P', '2K', '4K'],
+    description: 'Nano Banana Pro image generation and editing model',
   },
 };
 

@@ -149,7 +149,7 @@ export function TopBar({
         )}
 
         {/* Sub-model Selector - Image Models */}
-        {generationType === 'image' && model === 'gemini-3-pro' && (
+        {generationType === 'image' && (
           <div className="relative">
             <select
               value={geminiSubModel}
