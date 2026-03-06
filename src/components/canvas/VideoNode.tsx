@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoTask } from '../../types';
 import { STATUS_COLORS } from '../../utils/constants';
+import { releaseImageUrl, resolveImageUrl } from '../../services/mediaStore';
 
 interface VideoNodeProps {
     task: VideoTask;
@@ -14,10 +15,10 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [pos, setPos] = useState(task.position || { x: 100, y: 100 });
     const [showPreview, setShowPreview] = useState(false);
-    const [blobUrl, setBlobUrl] = useState<string | null>(null);
+    const [resolvedMediaUrl, setResolvedMediaUrl] = useState('');
     const nodeRef = useRef<HTMLDivElement>(null);
 
-    const mediaUrl = blobUrl || task.videoUrl;
+    const mediaUrl = resolvedMediaUrl || task.videoUrl;
 
     // 调试日志：检查任务状�?
     useEffect(() => {
@@ -25,7 +26,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
             console.log('[VideoNode] 任务完成:', task.id);
             console.log('[VideoNode] generationType:', task.generationType);
             console.log('[VideoNode] videoUrl:', task.videoUrl.substring(0, 80) + '...');
-            console.log('[VideoNode] 是图�?', task.generationType === 'image' || task.videoUrl.startsWith('data:image'));
+            console.log('[VideoNode] 是图�?', task.generationType === 'image' || task.videoUrl.startsWith('data:image') || task.videoUrl.startsWith('idb-image://'));
         }
     }, [task.status, task.videoUrl, task.generationType, task.id]);
 
@@ -36,28 +37,30 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
     }, [task.position]);
 
     useEffect(() => {
-        let objectUrl: string | null = null;
+        let active = true;
+        let currentUrl = '';
 
-        if (!task.videoUrl?.startsWith('data:image')) {
-            setBlobUrl(null);
-            return;
+        async function loadMediaUrl(): Promise<void> {
+            if (!task.videoUrl) {
+                setResolvedMediaUrl('');
+                return;
+            }
+
+            const nextUrl = await resolveImageUrl(task.videoUrl);
+            if (!active) {
+                releaseImageUrl(nextUrl);
+                return;
+            }
+
+            currentUrl = nextUrl;
+            setResolvedMediaUrl(nextUrl);
         }
 
-        fetch(task.videoUrl)
-            .then((response) => response.blob())
-            .then((blob) => {
-                objectUrl = URL.createObjectURL(blob);
-                setBlobUrl(objectUrl);
-            })
-            .catch((error) => {
-                console.error('[VideoNode] Failed to create blob URL:', error);
-                setBlobUrl(null);
-            });
+        void loadMediaUrl();
 
         return () => {
-            if (objectUrl) {
-                URL.revokeObjectURL(objectUrl);
-            }
+            active = false;
+            releaseImageUrl(currentUrl);
         };
     }, [task.videoUrl]);
 
