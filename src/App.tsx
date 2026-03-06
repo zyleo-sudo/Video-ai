@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopBar } from './components/layout/TopBar';
 import { CanvasWorkspace } from './components/layout/CanvasWorkspace';
@@ -30,6 +30,7 @@ import {
 import { addHistory } from './services/storage';
 import { VideoHistory } from './components/VideoHistory';
 import { generateId } from './utils/constants';
+import { releaseImageUrl, resolveImageUrl, saveImageData } from './services/mediaStore';
 
 type NavItemType = 'generate' | 'templates' | 'tasks' | 'history' | 'settings';
 
@@ -67,36 +68,35 @@ function App() {
   const [geminiSubModel, setGeminiSubModel] = useState<GeminiSubModel>(appSettings.defaultGeminiSubModel || 'gemini-3.1-flash-image-preview');
   const [batchMode, setBatchMode] = useState(false);
   const [globalPrompt, setGlobalPrompt] = useState('');
-
-  const selectedTaskMediaUrl = useMemo(() => {
-    if (!selectedTask?.videoUrl) return '';
-    if (!selectedTask.videoUrl.startsWith('data:image')) return selectedTask.videoUrl;
-
-    try {
-      const [header, base64] = selectedTask.videoUrl.split(',');
-      const mimeMatch = header.match(/data:(.*?);base64/);
-      const mimeType = mimeMatch?.[1] || 'image/png';
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-
-      for (let index = 0; index < binary.length; index += 1) {
-        bytes[index] = binary.charCodeAt(index);
-      }
-
-      return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
-    } catch (error) {
-      console.error('[App] Failed to create selected task media URL:', error);
-      return selectedTask.videoUrl;
-    }
-  }, [selectedTask]);
+  const [selectedTaskMediaUrl, setSelectedTaskMediaUrl] = useState('');
 
   useEffect(() => {
-    return () => {
-      if (selectedTaskMediaUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(selectedTaskMediaUrl);
+    let active = true;
+    let currentUrl = '';
+
+    async function loadSelectedTaskMedia(): Promise<void> {
+      if (!selectedTask?.videoUrl) {
+        setSelectedTaskMediaUrl('');
+        return;
       }
+
+      const resolvedUrl = await resolveImageUrl(selectedTask.videoUrl);
+      if (!active) {
+        releaseImageUrl(resolvedUrl);
+        return;
+      }
+
+      currentUrl = resolvedUrl;
+      setSelectedTaskMediaUrl(resolvedUrl);
+    }
+
+    void loadSelectedTaskMedia();
+
+    return () => {
+      active = false;
+      releaseImageUrl(currentUrl);
     };
-  }, [selectedTaskMediaUrl]);
+  }, [selectedTask]);
 
   // Sync tasks to localStorage
   useEffect(() => {
@@ -201,25 +201,28 @@ function App() {
             console.log('[App] å›¾ç‰‡ URL:', result.imageUrl.substring(0, 100) + '...');
             console.log('[App] ä»»åŠ¡ generationType:', task.generationType);
 
-            // æ›´æ–°ä»»åŠ¡çŠ¶æ€ä¸ºå®Œæˆï¼Œå¹¶ä¿å­˜å›¾ç‰‡ URL
+            const storedImageUrl = result.imageUrl.startsWith('data:image')
+              ? await saveImageData(task.id, result.imageUrl)
+              : result.imageUrl;
+
             setTasks(prev => prev.map(t =>
               t.id === task.id ? {
                 ...t,
                 status: 'completed',
-                videoUrl: result.imageUrl, // å¤ç”¨ videoUrl å­—æ®µå­˜å‚¨å›¾ç‰‡ URL
+                videoUrl: storedImageUrl,
                 progress: 100,
                 completedAt: new Date(),
               } : t
             ));
 
-            // æ·»åŠ åˆ°å†å²è®°å½•
+            // æ·»åŠ åˆ°å†å²è®°å½?
             addHistory({
               id: task.id,
               prompt: promptText,
               model: data.model as VideoModel,
               createdAt: new Date(),
-              videoUrl: result.imageUrl,
-              thumbnailUrl: result.imageUrl,
+              videoUrl: storedImageUrl,
+              thumbnailUrl: storedImageUrl,
               options: {
                 subModel: data.geminiSubModel,
                 aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
@@ -400,7 +403,7 @@ function App() {
                 <div className="flex items-center justify-between mb-8">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">çµæ„Ÿæ¨¡æ¿</h2>
-                    <p className="text-gray-500">é€‰æ‹©ä¸€ä¸ªä¸“ä¸šæç¤ºè¯æ¨¡æ¿å¼€å§‹åˆ›ä½œ</p>
+                    <p className="text-gray-500">Ñ¡ÔñÒ»¸öÌáÊ¾´ÊÄ£°å¿ªÊ¼´´×÷</p>
                   </div>
                   <button
                     onClick={() => setActiveNav('generate')}
@@ -426,7 +429,7 @@ function App() {
                 <div className="flex items-center justify-between mb-8">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">å†å²æ¡£æ¡ˆ</h2>
-                    <p className="text-gray-500">å›é¡¾æ‚¨çš„åˆ›ä½œè¶³è¿¹å¹¶é‡ç”¨çµæ„Ÿ</p>
+                    <p className="text-gray-500">²é¿´ÀúÊ·¼ÇÂ¼²¢¸´ÓÃÁé¸Ğ</p>
                   </div>
                   <button
                     onClick={() => setActiveNav('generate')}
@@ -459,7 +462,7 @@ function App() {
                   <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-3xl">âš™ï¸</div>
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">åº”ç”¨è®¾ç½®</h2>
-                    <p className="text-gray-500">ç®¡ç†æ‚¨çš„ API é…ç½®å’Œé»˜è®¤å‚æ•°</p>
+                    <p className="text-gray-500">¹ÜÀíÄúµÄ API ÅäÖÃºÍÄ¬ÈÏ²ÎÊı</p>
                   </div>
                 </div>
 
@@ -474,7 +477,7 @@ function App() {
                         type="password"
                         value={apiKey}
                         onChange={(e) => handleApiKeyChange(e.target.value)}
-                        placeholder="è¯·è¾“å…¥æ‚¨çš„ API å¯†é’¥..."
+                        placeholder="è¯·è¾“å…¥æ‚¨çš?API å¯†é’¥..."
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
                       />
                       <p className="mt-2 text-xs text-gray-400">ç›®å‰æ”¯æŒ allapi.store åŠå…¶å…¼å®¹çš„ä¸­è½¬ç«™</p>
@@ -489,7 +492,7 @@ function App() {
                         placeholder="https://..."
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all font-mono"
                       />
-                      <p className="mt-2 text-xs text-gray-400">å¦‚æœæ‚¨ä½¿ç”¨çš„æ˜¯è‡ªå»ºä¸­è½¬ç«™ï¼Œè¯·ä¿®æ”¹æ­¤é¡¹ï¼ˆéœ€åŒ…å« /v1 è·¯å¾„ï¼‰</p>
+                      <p className="mt-2 text-xs text-gray-400">Èç¹ûÊ¹ÓÃ×Ô½¨ÖĞ×ªÕ¾£¬ÇëÌîĞ´°üº¬ /v1 µÄ»ù´¡µØÖ·</p>
                     </div>
                   </section>
 
@@ -499,8 +502,8 @@ function App() {
                       <span className="text-lg">ğŸ¨</span> UI é£æ ¼æç¤º
                     </h4>
                     <p className="text-sm text-blue-800 leading-relaxed">
-                      å½“å‰å·²å¼€å¯<b>æ— é™ç”»å¸ƒ</b>æ¨¡å¼ã€‚æ‚¨å¯ä»¥åœ¨â€œç”Ÿæˆâ€æˆ–â€œä»»åŠ¡â€é¡µé¢éšæ„æ‹–æ‹½èŠ‚ç‚¹ã€ç¼©æ”¾è§†é‡ã€‚
-                      å¦‚æœâ€œAI ä¼˜åŒ–â€åŠŸèƒ½ç”±äºä¸­è½¬åœ°å€ä¸åŒ¹é…æ— æ³•ä½¿ç”¨ï¼Œè¯·åœ¨ä¸Šæ–¹æ­£ç¡®é…ç½®æ‚¨çš„åŸºç¡€åœ°å€ã€‚
+                      µ±Ç°ÒÑÆôÓÃÎŞÏŞ»­²¼Ä£Ê½£¬Äú¿ÉÒÔÔÚ¡°Éú³É¡±ºÍ¡°ÈÎÎñ¡±Ò³×ÔÓÉÍÏ×§½Úµã¡¢Ëõ·ÅÊÓÍ¼¡£
+                      Èç¹û AI ÓÅ»¯¹¦ÄÜ²»¿ÉÓÃ£¬ÇëÏÈ¼ì²éÉÏ·½ API »ù´¡µØÖ·ÅäÖÃ¡£
                     </p>
                   </section>
                 </div>
@@ -553,7 +556,7 @@ function App() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">æç¤ºè¯</label>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">ÌáÊ¾´Ê</label>
                 <p className="text-sm text-gray-800 mt-1.5 p-4 bg-gray-50 rounded-xl border border-gray-100">{selectedTask.prompt}</p>
               </div>
               <div className="grid grid-cols-3 gap-4">
@@ -562,7 +565,7 @@ function App() {
                   <p className="text-sm text-gray-800 mt-1 font-semibold uppercase">{selectedTask.model}</p>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">çŠ¶æ€</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">×´Ì¬</label>
                   <p className="text-sm text-gray-800 mt-1 font-semibold uppercase">{selectedTask.status}</p>
                 </div>
                 <div>
@@ -612,3 +615,4 @@ function App() {
 }
 
 export default App;
+

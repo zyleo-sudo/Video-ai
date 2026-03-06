@@ -1,5 +1,25 @@
-import { STORAGE_KEYS, AppSettings, HistoryRecord, DownloadItem, VideoTask } from '../types';
+﻿import { STORAGE_KEYS, AppSettings, HistoryRecord, DownloadItem, VideoTask } from '../types';
 import { DEFAULT_SETTINGS } from '../utils/constants';
+
+function sanitizeTaskForStorage(task: VideoTask): VideoTask {
+  const sanitizedTask = { ...task };
+
+  if (sanitizedTask.videoUrl?.startsWith('data:')) {
+    sanitizedTask.videoUrl = '';
+  }
+  if (sanitizedTask.thumbnailUrl?.startsWith('data:')) {
+    sanitizedTask.thumbnailUrl = '';
+  }
+  if (sanitizedTask.imageData?.startsWith('data:')) {
+    sanitizedTask.imageData = undefined;
+  }
+
+  return sanitizedTask;
+}
+
+function sanitizeTasksForStorage(tasks: VideoTask[]): VideoTask[] {
+  return tasks.map(sanitizeTaskForStorage);
+}
 
 // API Key storage
 export function getApiKey(): string {
@@ -68,7 +88,7 @@ export function getHistory(): HistoryRecord[] {
 export function addHistory(record: HistoryRecord): void {
   const history = getHistory();
 
-  // 对于 base64 图片，不保存到历史记录（避免 localStorage 配额溢出）
+  // Do not persist base64 payloads in history to avoid localStorage quota issues.
   const recordToSave = { ...record };
   if (recordToSave.videoUrl?.startsWith('data:')) {
     recordToSave.videoUrl = '';
@@ -168,7 +188,14 @@ export function getTasks(): VideoTask[] {
 }
 
 export function setTasks(tasks: VideoTask[]): void {
-  localStorage.setItem('videoai_tasks', JSON.stringify(tasks));
+  const sanitizedTasks = sanitizeTasksForStorage(tasks);
+
+  try {
+    localStorage.setItem('videoai_tasks', JSON.stringify(sanitizedTasks));
+  } catch (error) {
+    console.error('[Storage] Failed to persist tasks:', error);
+    localStorage.setItem('videoai_tasks', JSON.stringify(sanitizedTasks.slice(0, 10)));
+  }
 }
 
 export function addTask(task: VideoTask): void {
@@ -198,3 +225,5 @@ export function deleteTask(taskId: string): void {
 export function clearTasks(): void {
   localStorage.removeItem('videoai_tasks');
 }
+
+

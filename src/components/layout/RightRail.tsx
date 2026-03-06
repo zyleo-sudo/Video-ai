@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { VideoTask, HistoryRecord } from '../../types';
 import { getHistory } from '../../services/storage';
+import { releaseImageUrl, resolveImageUrl } from '../../services/mediaStore';
 
 interface RightRailProps {
   selectedTask: VideoTask | null;
@@ -11,6 +12,35 @@ interface RightRailProps {
 export function RightRail({ selectedTask, onTaskClick, onPromptSelect }: RightRailProps) {
   const history = getHistory();
   const [previewItem, setPreviewItem] = useState<HistoryRecord | null>(null);
+  const [selectedTaskMediaUrl, setSelectedTaskMediaUrl] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    let currentUrl = '';
+
+    async function loadSelectedTaskMedia(): Promise<void> {
+      if (!selectedTask?.videoUrl) {
+        setSelectedTaskMediaUrl('');
+        return;
+      }
+
+      const resolvedUrl = await resolveImageUrl(selectedTask.videoUrl);
+      if (!active) {
+        releaseImageUrl(resolvedUrl);
+        return;
+      }
+
+      currentUrl = resolvedUrl;
+      setSelectedTaskMediaUrl(resolvedUrl);
+    }
+
+    void loadSelectedTaskMedia();
+
+    return () => {
+      active = false;
+      releaseImageUrl(currentUrl);
+    };
+  }, [selectedTask]);
 
   return (
     <div className="fixed right-0 top-16 bottom-0 w-80 bg-white border-l border-gray-200 flex flex-col z-30 shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.05)]">
@@ -34,8 +64,12 @@ export function RightRail({ selectedTask, onTaskClick, onPromptSelect }: RightRa
 
             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
               <div className="aspect-video bg-gray-900 rounded-xl overflow-hidden mb-3 border border-gray-200">
-                {selectedTask.videoUrl ? (
-                  <video src={selectedTask.videoUrl} className="w-full h-full object-cover" muted loop autoPlay />
+                {selectedTaskMediaUrl ? (
+                  selectedTask.generationType === 'image' ? (
+                    <img src={selectedTaskMediaUrl} className="w-full h-full object-cover" alt={selectedTask.prompt} />
+                  ) : (
+                    <video src={selectedTaskMediaUrl} className="w-full h-full object-cover" muted loop autoPlay />
+                  )
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-gray-500 text-2xl">🎬</div>
                 )}
