@@ -14,15 +14,18 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [pos, setPos] = useState(task.position || { x: 100, y: 100 });
     const [showPreview, setShowPreview] = useState(false);
+    const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const nodeRef = useRef<HTMLDivElement>(null);
 
-    // 调试日志：检查任务状态
+    const mediaUrl = blobUrl || task.videoUrl;
+
+    // 调试日志：检查任务状�?
     useEffect(() => {
         if (task.status === 'completed' && task.videoUrl) {
             console.log('[VideoNode] 任务完成:', task.id);
             console.log('[VideoNode] generationType:', task.generationType);
             console.log('[VideoNode] videoUrl:', task.videoUrl.substring(0, 80) + '...');
-            console.log('[VideoNode] 是图片?', task.generationType === 'image' || task.videoUrl.startsWith('data:image'));
+            console.log('[VideoNode] 是图�?', task.generationType === 'image' || task.videoUrl.startsWith('data:image'));
         }
     }, [task.status, task.videoUrl, task.generationType, task.id]);
 
@@ -31,6 +34,32 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
             setPos(task.position);
         }
     }, [task.position]);
+
+    useEffect(() => {
+        let objectUrl: string | null = null;
+
+        if (!task.videoUrl?.startsWith('data:image')) {
+            setBlobUrl(null);
+            return;
+        }
+
+        fetch(task.videoUrl)
+            .then((response) => response.blob())
+            .then((blob) => {
+                objectUrl = URL.createObjectURL(blob);
+                setBlobUrl(objectUrl);
+            })
+            .catch((error) => {
+                console.error('[VideoNode] Failed to create blob URL:', error);
+                setBlobUrl(null);
+            });
+
+        return () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [task.videoUrl]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -66,17 +95,17 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
     }, [isDragging]);
 
     const handleDownload = async (task: VideoTask) => {
-        if (!task.videoUrl) return;
+        if (!mediaUrl) return;
 
         const filename = task.generationType === 'image'
             ? `image-${task.id}.png`
             : `video-${task.id}.mp4`;
 
-        // 如果是 base64 图片数据，直接创建链接下载
-        if (task.videoUrl.startsWith('data:image')) {
+        // 如果�?base64 图片数据，直接创建链接下�?
+        if (mediaUrl.startsWith('data:image') || mediaUrl.startsWith('blob:')) {
             try {
                 const link = document.createElement('a');
-                link.href = task.videoUrl;
+                link.href = mediaUrl;
                 link.download = filename;
                 document.body.appendChild(link);
                 link.click();
@@ -84,13 +113,13 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
             } catch (error) {
                 console.error('[VideoNode] Base64 下载失败:', error);
                 // 如果 base64 下载失败，尝试在新窗口打开
-                window.open(task.videoUrl, '_blank');
+                window.open(mediaUrl, '_blank');
             }
         } else {
-            // 远程 URL，使用 fetch 获取数据后再下载
+            // 远程 URL，使�?fetch 获取数据后再下载
             try {
-                console.log('[VideoNode] 开始下载:', task.videoUrl.substring(0, 50) + '...');
-                const response = await fetch(task.videoUrl);
+                console.log('[VideoNode] 开始下�?', mediaUrl.substring(0, 50) + '...');
+                const response = await fetch(mediaUrl);
                 if (!response.ok) {
                     throw new Error(`HTTP error: ${response.status}`);
                 }
@@ -110,7 +139,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
             } catch (error) {
                 console.error('[VideoNode] 下载失败:', error);
                 // 如果下载失败，尝试在新窗口打开
-                window.open(task.videoUrl, '_blank');
+                window.open(mediaUrl, '_blank');
             }
         }
     };
@@ -154,13 +183,14 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                 <div className="relative aspect-video bg-gray-900 rounded-xl mb-3 overflow-hidden border border-gray-100/20 shadow-inner group/media">
                     {(task.status === 'completed' && task.videoUrl) ? (
                         <>
-                            {/* 判断是图片还是视频 */}
-                            {(task.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)/i) || 
-                              task.videoUrl?.startsWith('data:image') || 
+                            {/* 判断是图片还是视�?*/}
+                            {(mediaUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)/i) || 
+                              mediaUrl?.startsWith('data:image') || 
+                              mediaUrl?.startsWith('blob:') || 
                               task.generationType === 'image') ? (
                                 // 图片显示
                                 <img
-                                    src={task.videoUrl}
+                                    src={mediaUrl}
                                     className="w-full h-full object-cover"
                                     alt={task.prompt}
                                     onError={(e) => {
@@ -171,7 +201,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                             ) : (
                                 // 视频显示
                                 <video
-                                    src={task.videoUrl}
+                                    src={mediaUrl}
                                     className="w-full h-full object-cover"
                                     muted
                                     loop
@@ -187,7 +217,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                                     className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center hover:bg-white/40 transition-all transform hover:scale-110"
                                     title={task.generationType === 'image' ? "查看图片" : "预览播放"}
                                 >
-                                    <span className="text-white text-lg">{task.generationType === 'image' ? '👁' : '▶'}</span>
+                                    <span className="text-white text-lg">{task.generationType === 'image' ? '??' : '?'}</span>
                                 </button>
                                 <button
                                     onClick={(e) => {
@@ -197,7 +227,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                                     className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center hover:bg-white/40 transition-all transform hover:scale-110"
                                     title={task.generationType === 'image' ? "下载图片" : "下载视频"}
                                 >
-                                    <span className="text-white text-lg">↓</span>
+                                    <span className="text-white text-lg">��</span>
                                 </button>
                             </div>
                         </>
@@ -253,7 +283,7 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
         </div>
 
         {/* Preview Modal */}
-        {showPreview && task.videoUrl && (
+        {showPreview && mediaUrl && (
             <div 
                 className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]"
                 onClick={() => setShowPreview(false)}
@@ -276,8 +306,9 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
                         </button>
                     </div>
                     <div className="p-4">
-                        {(task.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) || 
-                          task.videoUrl?.startsWith('data:image') || 
+                        {(mediaUrl?.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i) || 
+                          mediaUrl?.startsWith('data:image') || 
+                          mediaUrl?.startsWith('blob:') || 
                           task.generationType === 'image') ? (
                             <img 
                                 src={task.videoUrl} 
@@ -300,3 +331,4 @@ export function VideoNode({ task, onClick, onDrag, onRemove }: VideoNodeProps) {
         </>
     );
 }
+

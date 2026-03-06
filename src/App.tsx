@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopBar } from './components/layout/TopBar';
 import { CanvasWorkspace } from './components/layout/CanvasWorkspace';
@@ -67,6 +67,36 @@ function App() {
   const [geminiSubModel, setGeminiSubModel] = useState<GeminiSubModel>(appSettings.defaultGeminiSubModel || 'gemini-3.1-flash-image-preview');
   const [batchMode, setBatchMode] = useState(false);
   const [globalPrompt, setGlobalPrompt] = useState('');
+
+  const selectedTaskMediaUrl = useMemo(() => {
+    if (!selectedTask?.videoUrl) return '';
+    if (!selectedTask.videoUrl.startsWith('data:image')) return selectedTask.videoUrl;
+
+    try {
+      const [header, base64] = selectedTask.videoUrl.split(',');
+      const mimeMatch = header.match(/data:(.*?);base64/);
+      const mimeType = mimeMatch?.[1] || 'image/png';
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+
+      return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+    } catch (error) {
+      console.error('[App] Failed to create selected task media URL:', error);
+      return selectedTask.videoUrl;
+    }
+  }, [selectedTask]);
+
+  useEffect(() => {
+    return () => {
+      if (selectedTaskMediaUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(selectedTaskMediaUrl);
+      }
+    };
+  }, [selectedTaskMediaUrl]);
 
   // Sync tasks to localStorage
   useEffect(() => {
@@ -552,18 +582,18 @@ function App() {
                   <div className="mt-2 flex gap-3">
                     <input
                       type="text"
-                      value={selectedTask.videoUrl}
+                      value={selectedTaskMediaUrl || selectedTask.videoUrl}
                       readOnly
                       className="flex-1 px-4 py-3 text-sm border border-gray-100 rounded-xl bg-gray-50 focus:outline-none"
                     />
                     <button
-                      onClick={() => navigator.clipboard.writeText(selectedTask.videoUrl!)}
+                      onClick={() => navigator.clipboard.writeText(selectedTaskMediaUrl || selectedTask.videoUrl!)}
                       className="px-5 py-3 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
                     >
                       复制
                     </button>
                     <a
-                      href={selectedTask.videoUrl}
+                      href={selectedTaskMediaUrl || selectedTask.videoUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-5 py-3 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
