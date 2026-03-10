@@ -186,13 +186,14 @@ function App() {
             resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
             negativePrompt: data.negativePrompt,
           };
+          const referenceImages = [data.imageData, data.imageData2].filter((value): value is string => Boolean(value));
 
           const result = await createGeminiImage(
             apiKey,
             promptText,
             data.geminiSubModel,
             geminiOptions,
-            data.imageData
+            referenceImages.length > 0 ? referenceImages : undefined
           );
 
           // 图像生成完成（Gemini 是同步返回）

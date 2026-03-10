@@ -265,7 +265,10 @@ export function BottomEditor({
       geminiSubModel,
       prompts: promptsToProcess,
       imageData: useImage ? imageData : undefined,
-      imageData2: generationType === 'video' && useImage && imageType === 'start-end' ? imageData2 : undefined,
+      imageData2: useImage && (
+        generationType === 'image' ||
+        (generationType === 'video' && imageType === 'start-end')
+      ) ? imageData2 : undefined,
       imageType: generationType === 'video' && useImage ? imageType : undefined,
       aspectRatio,
       duration,
@@ -349,14 +352,18 @@ export function BottomEditor({
                   onClick={handleImageSelect}
                   className="ml-2 px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"
                 >
-                  {imageData ? '更换图片' : '选择图片'}
+                  {generationType === 'image'
+                    ? (imageData ? 'Replace Ref A' : 'Select Ref A')
+                    : (imageData ? 'Replace Image' : 'Select Image')}
                 </button>
-                {generationType === 'video' && imageType === 'start-end' && (
+                {(generationType === 'image' || (generationType === 'video' && imageType === 'start-end')) && (
                   <button
                     onClick={handleImageSelect2}
                     className="px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"
                   >
-                    {imageData2 ? '更换尾帧' : '选择尾帧'}
+                    {generationType === 'image'
+                      ? (imageData2 ? 'Replace Ref B' : 'Select Ref B')
+                      : (imageData2 ? 'Replace End Frame' : 'Select End Frame')}
                   </button>
                 )}
                 {(imageData || imageData2) && (
@@ -364,7 +371,7 @@ export function BottomEditor({
                     onClick={handleClearImages}
                     className="ml-2 text-xs font-semibold text-red-600 hover:text-red-800"
                   >
-                    清除
+                    Clear
                   </button>
                 )}
               </>

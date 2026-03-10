@@ -908,7 +908,7 @@ export async function createGeminiImage(
     resolution?: '720P' | '1080P' | '2K' | '4K';
     negativePrompt?: string;
   } = {},
-  referenceImageData?: string
+  referenceImageData?: string | string[]
 ): Promise<{ taskId: string; status: TaskStatus; imageUrl?: string }> {
   const { apiBaseUrl } = getSettings();
 
@@ -939,7 +939,13 @@ export async function createGeminiImage(
   const size = calculateSize(options.resolution || '2K', options.aspectRatio || '1:1');
   const aspectRatio = options.aspectRatio || '1:1';
 
-  if (referenceImageData) {
+  const normalizedReferenceImages = (
+    Array.isArray(referenceImageData) ? referenceImageData : referenceImageData ? [referenceImageData] : []
+  )
+    .filter((url): url is string => typeof url === 'string' && url.length > 0)
+    .slice(0, 2);
+
+  if (normalizedReferenceImages.length > 0) {
     const multimodalUrl = `${apiBaseUrl}/chat/completions`;
     const multimodalRequestBody = {
       model: subModel,
@@ -948,7 +954,7 @@ export async function createGeminiImage(
           role: 'user',
           content: [
             { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: referenceImageData } },
+            ...normalizedReferenceImages.map((url) => ({ type: 'image_url', image_url: { url } })),
           ],
         },
       ],
@@ -961,8 +967,11 @@ export async function createGeminiImage(
 
     console.log('[API] Use multimodal image generation with reference image');
     console.log('[API] URL:', multimodalUrl);
-    console.log('[API] Params:', { size, aspectRatio, hasReferenceImage: true });
-
+    console.log('[API] Params:', {
+      size,
+      aspectRatio,
+      referenceImageCount: normalizedReferenceImages.length,
+    });
     const maxRetries = 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const multimodalResponse = await fetch(multimodalUrl, {
