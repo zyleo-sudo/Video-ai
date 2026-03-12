@@ -913,16 +913,18 @@ export async function createGeminiImage(
   const { apiBaseUrl } = getSettings();
 
   // 根据宽高比和分辨率计算正确的尺寸
-  function calculateSize(res: string, ratio: string): string {
-    const baseRes: Record<string, number> = {
-      '720P': 720,
-      '1080P': 1080,
-      '2K': 1440,
-      '4K': 2160,
+  function calculateDimensions(
+    res: '720P' | '1080P' | '2K' | '4K',
+    ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
+  ): { width: number; height: number } {
+    const longEdgeMap: Record<'720P' | '1080P' | '2K' | '4K', number> = {
+      '720P': 1280,
+      '1080P': 1920,
+      '2K': 2048,
+      '4K': 4096,
     };
-    const height = baseRes[res] || 1440;
 
-    const ratioMap: Record<string, { w: number; h: number }> = {
+    const ratioMap: Record<'1:1' | '16:9' | '9:16' | '4:3' | '3:4', { w: number; h: number }> = {
       '1:1': { w: 1, h: 1 },
       '16:9': { w: 16, h: 9 },
       '9:16': { w: 9, h: 16 },
@@ -930,14 +932,42 @@ export async function createGeminiImage(
       '3:4': { w: 3, h: 4 },
     };
 
-    const r = ratioMap[ratio] || { w: 1, h: 1 };
-    const width = Math.round(height * (r.w / r.h));
+    const maxSide = longEdgeMap[res];
+    const selectedRatio = ratioMap[ratio];
 
-    return `${width}x${height}`;
+    if (selectedRatio.w >= selectedRatio.h) {
+      return {
+        width: maxSide,
+        height: Math.round((maxSide * selectedRatio.h) / selectedRatio.w),
+      };
+    }
+
+    return {
+      width: Math.round((maxSide * selectedRatio.w) / selectedRatio.h),
+      height: maxSide,
+    };
   }
 
-  const size = calculateSize(options.resolution || '2K', options.aspectRatio || '1:1');
+  function buildAspectRatioPrompt(
+    basePrompt: string,
+    ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
+  ): string {
+    const ratioInstructionMap: Record<'1:1' | '16:9' | '9:16' | '4:3' | '3:4', string> = {
+      '1:1': 'Output must use a strict 1:1 square canvas. Do not return a landscape or portrait image.',
+      '16:9': 'Output must use a strict 16:9 landscape canvas.',
+      '9:16': 'Output must use a strict 9:16 portrait canvas.',
+      '4:3': 'Output must use a strict 4:3 canvas.',
+      '3:4': 'Output must use a strict 3:4 portrait canvas.',
+    };
+
+    return `${basePrompt}\n\n${ratioInstructionMap[ratio]}`;
+  }
+
   const aspectRatio = options.aspectRatio || '1:1';
+  const resolution = options.resolution || '2K';
+  const { width, height } = calculateDimensions(resolution, aspectRatio);
+  const size = resolution;
+  const promptWithAspectRatio = buildAspectRatioPrompt(prompt, aspectRatio);
 
   const normalizedReferenceImages = (
     Array.isArray(referenceImageData) ? referenceImageData : referenceImageData ? [referenceImageData] : []
@@ -953,7 +983,7 @@ export async function createGeminiImage(
         {
           role: 'user',
           content: [
-            { type: 'text', text: prompt },
+            { type: 'text', text: promptWithAspectRatio },
             ...normalizedReferenceImages.map((url) => ({ type: 'image_url', image_url: { url } })),
           ],
         },
@@ -961,6 +991,12 @@ export async function createGeminiImage(
       response_modalities: ['image'],
       size: size,
       aspect_ratio: aspectRatio,
+      width: width,
+      height: height,
+      image_size: {
+        width,
+        height,
+      },
       negative_prompt: options.negativePrompt || '',
       temperature: 0.7,
     };
@@ -970,6 +1006,8 @@ export async function createGeminiImage(
     console.log('[API] Params:', {
       size,
       aspectRatio,
+      width,
+      height,
       referenceImageCount: normalizedReferenceImages.length,
     });
     const maxRetries = 2;
@@ -1007,19 +1045,22 @@ export async function createGeminiImage(
   }
 
   // 尝试使用专门的图像生成 API (/images/generations)
-  let url = `${apiBaseUrl}/images/generations`;
-  let requestBody: any = {
+  const url = `${apiBaseUrl}/images/generations`;
+  const requestBody = {
     model: subModel,
-    prompt: prompt,
+    prompt: promptWithAspectRatio,
     size: size,
+    aspect_ratio: aspectRatio,
+    width: width,
+    height: height,
+    image_size: {
+      width,
+      height,
+    },
     n: 1,
   };
 
   // 如果 API 支持 aspect_ratio 参数
-  if (aspectRatio !== '16:9') {
-    requestBody.aspect_ratio = aspectRatio;
-  }
-
   console.log('[API] 尝试使用 /images/generations 端点');
   console.log('[API] URL:', url);
   console.log('[API] 模型:', subModel);
@@ -1047,10 +1088,16 @@ export async function createGeminiImage(
       const fallbackUrl = `${apiBaseUrl}/chat/completions`;
       const fallbackRequestBody = {
         model: subModel,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: promptWithAspectRatio }],
         response_modalities: ['image'],
         size: size,
         aspect_ratio: aspectRatio,
+        width: width,
+        height: height,
+        image_size: {
+          width,
+          height,
+        },
         negative_prompt: options.negativePrompt || '',
         temperature: 0.7,
       };
