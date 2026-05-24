@@ -28,6 +28,22 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return response.blob();
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error('Failed to convert blob to data URL'));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 export function createImageRef(id: string): string {
   return `${IMAGE_REF_PREFIX}${id}`;
 }
@@ -94,6 +110,57 @@ export async function resolveImageUrl(url?: string): Promise<string> {
     return '';
   } finally {
     database?.close();
+  }
+}
+
+export async function resolveImageDataUrl(url?: string): Promise<string> {
+  if (!url) {
+    return '';
+  }
+
+  if (url.startsWith('data:image')) {
+    return url;
+  }
+
+  if (isImageRef(url)) {
+    let database: IDBDatabase | null = null;
+
+    try {
+      database = await openDatabase();
+      const id = getImageRefId(url);
+      const record = await new Promise<StoredImageRecord | null>((resolve, reject) => {
+        const transaction = database!.transaction(IMAGE_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(IMAGE_STORE_NAME);
+        const request = store.get(id);
+
+        request.onsuccess = () => resolve((request.result as StoredImageRecord | undefined) || null);
+        request.onerror = () => reject(request.error);
+      });
+
+      if (!record?.blob) {
+        return '';
+      }
+
+      return blobToDataUrl(record.blob);
+    } catch (error) {
+      console.error('[MediaStore] Failed to resolve image data URL:', error);
+      return '';
+    } finally {
+      database?.close();
+    }
+  }
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    return blobToDataUrl(blob);
+  } catch (error) {
+    console.error('[MediaStore] Failed to fetch remote image data:', error);
+    return '';
   }
 }
 

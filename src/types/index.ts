@@ -5,7 +5,7 @@ export type GenerationType = 'video' | 'image';
 export type VideoModel = 'veo' | 'sora' | 'grok';
 
 // Image generation models
-export type ImageModel = 'gemini-3-pro' | 'gemini-3.1-flash-image-preview';
+export type ImageModel = 'image2';
 
 // Veo sub-model types (支持两种 API 格式)
 // OpenAI 格式: veo_3_1, veo_3_1-fast, veo_3_1-fast-4K, veo_3_1-pro
@@ -29,8 +29,8 @@ export type SoraSubModel = 'sora-2-all';
 // Grok sub-model types
 export type GrokSubModel = 'grok-video-3';
 
-// Gemini sub-model types
-export type GeminiSubModel = 'gemini-3.1-flash-image-preview';
+// Image sub-model types
+export type ImageSubModel = 'image2';
 
 // Generation status
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -61,9 +61,9 @@ export interface GrokOptions {
   audioEnabled?: boolean; // 音画同出
 }
 
-// Gemini image generation options
-export interface GeminiOptions {
-  subModel?: GeminiSubModel;
+// Image generation options
+export interface ImageOptions {
+  subModel?: ImageSubModel;
   aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
   resolution?: '720P' | '1080P' | '2K' | '4K';
   negativePrompt?: string;
@@ -74,7 +74,7 @@ export interface GeminiOptions {
 export interface VideoTask {
   id: string;
   prompt: string;
-  model: VideoModel;
+  model: VideoModel | ImageModel;
   status: TaskStatus;
   createdAt: Date;
   completedAt?: Date;
@@ -82,23 +82,29 @@ export interface VideoTask {
   thumbnailUrl?: string;
   errorMessage?: string;
   progress?: number;
-  options?: VeoOptions | SoraOptions | GrokOptions | GeminiOptions;
+  options?: VeoOptions | SoraOptions | GrokOptions | ImageOptions;
   imageData?: string; // base64 image for image-to-video
   position?: { x: number; y: number }; // position on the canvas
   generationType?: GenerationType; // 'video' or 'image'
+  batchId?: string;
+  sourceTaskId?: string;
+  batchLabel?: string;
 }
 
 // History record
 export interface HistoryRecord {
   id: string;
   prompt: string;
-  model: VideoModel;
+  model: VideoModel | ImageModel;
   createdAt: Date;
   videoUrl: string;
   thumbnailUrl?: string;
   duration?: number;
-  options?: VeoOptions | SoraOptions | GrokOptions | GeminiOptions;
+  options?: VeoOptions | SoraOptions | GrokOptions | ImageOptions;
   generationType?: GenerationType;
+  batchId?: string;
+  sourceTaskId?: string;
+  batchLabel?: string;
 }
 
 // Download item
@@ -145,7 +151,7 @@ export interface AppSettings {
   defaultVeoSubModel: VeoSubModel;
   defaultSoraSubModel: SoraSubModel;
   defaultGrokSubModel: GrokSubModel;
-  defaultGeminiSubModel: GeminiSubModel;
+  defaultImageSubModel: ImageSubModel;
   defaultAspectRatio: string;
   apiBaseUrl: string;
 }

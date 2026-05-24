@@ -1,36 +1,50 @@
-import { useState, useCallback, useEffect } from 'react';
-import { Sidebar } from './components/layout/Sidebar';
-import { TopBar } from './components/layout/TopBar';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { PromptTemplates } from './components/PromptTemplates';
+import { VideoHistory } from './components/VideoHistory';
 import { CanvasWorkspace } from './components/layout/CanvasWorkspace';
 import { BottomEditor } from './components/layout/BottomEditor';
 import { RightRail } from './components/layout/RightRail';
-import { PromptTemplates } from './components/PromptTemplates';
-import { 
-  VideoTask, 
-  VideoModel, 
-  ImageModel,
-  VeoSubModel, 
-  SoraSubModel, 
-  GrokSubModel, 
-  GeminiSubModel,
-  GenerationType,
-  AppSettings 
-} from './types';
-import { getApiKey, setApiKey as setApiKeyToStorage, getSettings, setSettings as setSettingsToStorage, getTasks as getTasksFromStorage, setTasks as setTasksToStorage, addTask as addTaskToStorage } from './services/storage';
+import { Sidebar } from './components/layout/Sidebar';
+import { TopBar } from './components/layout/TopBar';
 import {
-  createVeoVideoAuto,
-  createVeoVideoWithImage,
-  createSoraVideo,
-  createSoraVideoWithImage,
+  AppSettings,
+  GenerationType,
+  GrokSubModel,
+  ImageModel,
+  ImageSubModel,
+  SoraSubModel,
+  VeoSubModel,
+  VideoModel,
+  VideoTask,
+} from './types';
+import {
+  batchOptimizePrompts,
   createGrokVideo,
   createGrokVideoWithImage,
-  createGeminiImage,
+  createImage2Image,
+  createSoraVideo,
+  createSoraVideoWithImage,
+  createVeoVideoAuto,
+  createVeoVideoWithImage,
   pollTaskStatus,
 } from './services/allapi';
-import { addHistory } from './services/storage';
-import { VideoHistory } from './components/VideoHistory';
+import {
+  addHistory,
+  addTask as addTaskToStorage,
+  getApiKey,
+  getSettings,
+  getTasks as getTasksFromStorage,
+  setApiKey as setApiKeyToStorage,
+  setSettings as setSettingsToStorage,
+  setTasks as setTasksToStorage,
+} from './services/storage';
 import { generateId } from './utils/constants';
-import { releaseImageUrl, resolveImageUrl, saveImageData } from './services/mediaStore';
+import {
+  releaseImageUrl,
+  resolveImageDataUrl,
+  resolveImageUrl,
+  saveImageData,
+} from './services/mediaStore';
 
 type NavItemType = 'generate' | 'templates' | 'tasks' | 'history' | 'settings';
 
@@ -40,7 +54,7 @@ interface GenerateData {
   veoSubModel: VeoSubModel;
   soraSubModel: SoraSubModel;
   grokSubModel: GrokSubModel;
-  geminiSubModel: GeminiSubModel;
+  imageSubModel: ImageSubModel;
   prompts: string[];
   imageData?: string;
   imageData2?: string;
@@ -49,26 +63,48 @@ interface GenerateData {
   duration: number;
   resolution: string;
   negativePrompt: string;
+  imageCount: number;
+  variationCount: number;
+}
+
+interface EditorSeedImage {
+  dataUrl: string;
+  prompt: string;
+  sourceTaskId: string;
+}
+
+interface VideoBatchRunOptions {
+  prompt?: string;
+  model?: VideoModel;
+  duration?: number;
 }
 
 function App() {
-  // Settings and state
   const [appSettings, setAppSettings] = useState<AppSettings>(getSettings());
   const [apiKey, setApiKey] = useState(getApiKey());
   const [activeNav, setActiveNav] = useState<NavItemType>('generate');
   const [tasks, setTasks] = useState<VideoTask[]>(getTasksFromStorage());
   const [selectedTask, setSelectedTask] = useState<VideoTask | null>(null);
-
-  // Generation type and model settings
   const [generationType, setGenerationType] = useState<GenerationType>(appSettings.defaultGenerationType || 'video');
   const [model, setModel] = useState<VideoModel | ImageModel>(appSettings.defaultModel);
   const [veoSubModel, setVeoSubModel] = useState<VeoSubModel>(appSettings.defaultVeoSubModel);
   const [soraSubModel, setSoraSubModel] = useState<SoraSubModel>(appSettings.defaultSoraSubModel);
   const [grokSubModel, setGrokSubModel] = useState<GrokSubModel>(appSettings.defaultGrokSubModel);
-  const [geminiSubModel, setGeminiSubModel] = useState<GeminiSubModel>(appSettings.defaultGeminiSubModel || 'gemini-3.1-flash-image-preview');
+  const [imageSubModel, setImageSubModel] = useState<ImageSubModel>(appSettings.defaultImageSubModel || 'image2');
   const [batchMode, setBatchMode] = useState(false);
   const [globalPrompt, setGlobalPrompt] = useState('');
   const [selectedTaskMediaUrl, setSelectedTaskMediaUrl] = useState('');
+  const [editorSeedImages, setEditorSeedImages] = useState<EditorSeedImage[]>([]);
+
+  const imageTasks = useMemo(() => tasks.filter((task) => task.generationType === 'image'), [tasks]);
+
+  const updateSettings = useCallback((updates: Partial<AppSettings>) => {
+    setAppSettings((prev) => {
+      const next = { ...prev, ...updates };
+      setSettingsToStorage(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -98,283 +134,450 @@ function App() {
     };
   }, [selectedTask]);
 
-  // Sync tasks to localStorage
   useEffect(() => {
     setTasksToStorage(tasks);
   }, [tasks]);
 
   const handleGenerationTypeChange = useCallback((type: GenerationType) => {
     setGenerationType(type);
-    updateSettings({ defaultGenerationType: type });
-    // Switch to appropriate default model when changing type
+
     if (type === 'image') {
-      setModel('gemini-3.1-flash-image-preview');
-      updateSettings({ defaultModel: 'gemini-3.1-flash-image-preview' });
-    } else {
-      setModel('veo');
-      updateSettings({ defaultModel: 'veo' });
+      setModel('image2');
+      updateSettings({
+        defaultGenerationType: type,
+        defaultModel: 'image2',
+      });
+      return;
     }
-  }, []);
 
-  const handleModelChange = useCallback((newModel: VideoModel | ImageModel) => {
-    setModel(newModel);
-    updateSettings({ defaultModel: newModel });
-  }, []);
+    setModel('veo');
+    updateSettings({
+      defaultGenerationType: type,
+      defaultModel: 'veo',
+    });
+  }, [updateSettings]);
 
-  const handleVeoSubModelChange = useCallback((subModel: VeoSubModel) => {
-    setVeoSubModel(subModel);
-    updateSettings({ defaultVeoSubModel: subModel });
-  }, []);
+  const handleModelChange = useCallback((nextModel: VideoModel | ImageModel) => {
+    setModel(nextModel);
+    updateSettings({ defaultModel: nextModel });
+  }, [updateSettings]);
 
-  const handleSoraSubModelChange = useCallback((subModel: SoraSubModel) => {
-    setSoraSubModel(subModel);
-    updateSettings({ defaultSoraSubModel: subModel });
-  }, []);
-
-  const handleGrokSubModelChange = useCallback((subModel: GrokSubModel) => {
-    setGrokSubModel(subModel);
-    updateSettings({ defaultGrokSubModel: subModel });
-  }, []);
-
-  const handleGeminiSubModelChange = useCallback((subModel: GeminiSubModel) => {
-    setGeminiSubModel(subModel);
-    updateSettings({ defaultGeminiSubModel: subModel });
-  }, []);
-
-  const updateSettings = (updates: Partial<AppSettings>) => {
-    const newSettings = { ...appSettings, ...updates };
-    setAppSettings(newSettings);
-    setSettingsToStorage(updates);
-  };
-
-  const handleApiKeyChange = (newKey: string) => {
+  const handleApiKeyChange = useCallback((newKey: string) => {
     setApiKey(newKey);
     setApiKeyToStorage(newKey);
-  };
-
-
+  }, []);
 
   const handleUpdateTaskPosition = useCallback((taskId: string, x: number, y: number) => {
-    setTasks(prev => prev.map(t =>
-      t.id === taskId ? { ...t, position: { x, y } } : t
-    ));
+    setTasks((prev) => prev.map((task) => (
+      task.id === taskId ? { ...task, position: { x, y } } : task
+    )));
   }, []);
 
   const handleDeleteTask = useCallback((taskId: string) => {
-    setTasks(prev => prev.filter(t => t.id !== taskId));
+    setTasks((prev) => prev.filter((task) => task.id !== taskId));
+    setSelectedTask((prev) => (prev?.id === taskId ? null : prev));
   }, []);
 
-  const handleGenerate = async (data: GenerateData) => {
+  const handleUseTaskAsVideoSource = useCallback(async (task: VideoTask) => {
+    if (task.generationType !== 'image' || !task.videoUrl) {
+      return;
+    }
+
+    const dataUrl = await resolveImageDataUrl(task.videoUrl);
+    if (!dataUrl) {
+      alert('无法读取该图片作为视频输入');
+      return;
+    }
+
+    setGenerationType('video');
+    setModel('veo');
+    updateSettings({
+      defaultGenerationType: 'video',
+      defaultModel: 'veo',
+    });
+    setEditorSeedImages([
+      {
+        dataUrl,
+        prompt: task.prompt,
+        sourceTaskId: task.id,
+      },
+    ]);
+    setGlobalPrompt(task.prompt);
+    setActiveNav('generate');
+  }, [updateSettings]);
+
+  const createTask = useCallback((
+    promptText: string,
+    data: GenerateData,
+    overrides?: Partial<VideoTask>
+  ): VideoTask => ({
+    id: generateId(),
+    prompt: promptText,
+    model: data.model,
+    status: 'pending',
+    createdAt: new Date(),
+    progress: 0,
+    generationType: data.generationType,
+    options: data.generationType === 'image'
+      ? {
+          subModel: data.imageSubModel,
+          aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
+          resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
+          negativePrompt: data.negativePrompt,
+        }
+      : data.model === 'veo'
+        ? {
+            subModel: data.veoSubModel,
+            aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
+            duration: data.duration,
+            negativePrompt: data.negativePrompt,
+            imageType: data.imageType,
+          }
+        : data.model === 'grok'
+          ? {
+              subModel: data.grokSubModel,
+              aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
+              duration: data.duration,
+              audioEnabled: true,
+            }
+          : {
+              subModel: data.soraSubModel,
+              aspectRatio: data.aspectRatio,
+              duration: data.duration,
+            },
+    imageData: data.imageData,
+    position: { x: 100 + (Math.random() * 200), y: 100 + (Math.random() * 200) },
+    ...overrides,
+  }), []);
+
+  const finalizeImageTask = useCallback(async (
+    task: VideoTask,
+    promptText: string,
+    data: GenerateData
+  ): Promise<void> => {
+    const result = await createImage2Image(
+      apiKey,
+      promptText,
+      data.imageSubModel,
+      {
+        aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
+        resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
+        negativePrompt: data.negativePrompt,
+      },
+      [data.imageData, data.imageData2].filter((value): value is string => Boolean(value))
+    );
+
+    if (result.status === 'completed' && result.imageUrl) {
+      const storedImageUrl = result.imageUrl.startsWith('data:image')
+        ? await saveImageData(task.id, result.imageUrl)
+        : result.imageUrl;
+
+      setTasks((prev) => prev.map((current) => (
+        current.id === task.id
+          ? {
+              ...current,
+              status: 'completed',
+              videoUrl: storedImageUrl,
+              thumbnailUrl: storedImageUrl,
+              progress: 100,
+              completedAt: new Date(),
+            }
+          : current
+      )));
+
+      addHistory({
+        id: task.id,
+        prompt: promptText,
+        model: data.model,
+        createdAt: new Date(),
+        videoUrl: storedImageUrl,
+        thumbnailUrl: storedImageUrl,
+        options: {
+          subModel: data.imageSubModel,
+          aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
+          resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
+          negativePrompt: data.negativePrompt,
+        },
+        generationType: 'image',
+        batchId: task.batchId,
+        sourceTaskId: task.sourceTaskId,
+        batchLabel: task.batchLabel,
+      });
+      return;
+    }
+
+    setTasks((prev) => prev.map((current) => (
+      current.id === task.id
+        ? { ...current, status: 'failed', errorMessage: '图片生成失败' }
+        : current
+    )));
+  }, [apiKey]);
+
+  const finalizeVideoTask = useCallback(async (
+    task: VideoTask,
+    promptText: string,
+    data: GenerateData
+  ): Promise<void> => {
+    const veoOptions = {
+      aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
+      duration: data.duration,
+      negativePrompt: data.negativePrompt,
+    };
+    const soraOptions = {
+      aspectRatio: data.aspectRatio,
+      duration: data.duration,
+    };
+    const grokOptions = {
+      aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
+      duration: data.duration,
+      audioEnabled: true,
+    };
+
+    let result: { taskId: string; status: string };
+    if (data.model === 'veo') {
+      result = data.imageData
+        ? await createVeoVideoWithImage(apiKey, promptText, data.imageData, data.veoSubModel, veoOptions)
+        : await createVeoVideoAuto(apiKey, promptText, data.veoSubModel, veoOptions);
+    } else if (data.model === 'grok') {
+      result = data.imageData
+        ? await createGrokVideoWithImage(apiKey, promptText, data.imageData, data.grokSubModel, grokOptions)
+        : await createGrokVideo(apiKey, promptText, data.grokSubModel, grokOptions);
+    } else {
+      result = data.imageData
+        ? await createSoraVideoWithImage(apiKey, promptText, data.imageData, data.soraSubModel, soraOptions)
+        : await createSoraVideo(apiKey, promptText, data.soraSubModel, soraOptions);
+    }
+
+    const subModel = data.model === 'veo'
+      ? data.veoSubModel
+      : data.model === 'grok'
+        ? data.grokSubModel
+        : data.soraSubModel;
+
+    const pollResult = await pollTaskStatus(
+      apiKey,
+      data.model as VideoModel,
+      result.taskId,
+      subModel,
+      (status, progress) => {
+        setTasks((prev) => prev.map((current) => (
+          current.id === task.id ? { ...current, status, progress } : current
+        )));
+      }
+    );
+
+    if (pollResult.status === 'completed' && pollResult.videoUrl) {
+      setTasks((prev) => prev.map((current) => (
+        current.id === task.id
+          ? {
+              ...current,
+              status: 'completed',
+              videoUrl: pollResult.videoUrl,
+              thumbnailUrl: pollResult.thumbnailUrl,
+              progress: 100,
+              completedAt: new Date(),
+            }
+          : current
+      )));
+
+      addHistory({
+        id: task.id,
+        prompt: promptText,
+        model: data.model,
+        createdAt: new Date(),
+        videoUrl: pollResult.videoUrl,
+        thumbnailUrl: pollResult.thumbnailUrl,
+        duration: data.duration,
+        options: data.model === 'veo'
+          ? {
+              subModel: data.veoSubModel,
+              aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
+              duration: data.duration,
+              negativePrompt: data.negativePrompt,
+              imageType: data.imageType,
+            }
+          : data.model === 'grok'
+            ? {
+                subModel: data.grokSubModel,
+                aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
+                duration: data.duration,
+                audioEnabled: true,
+              }
+            : {
+                subModel: data.soraSubModel,
+                aspectRatio: data.aspectRatio,
+                duration: data.duration,
+              },
+        generationType: 'video',
+        batchId: task.batchId,
+        sourceTaskId: task.sourceTaskId,
+        batchLabel: task.batchLabel,
+      });
+      return;
+    }
+
+    setTasks((prev) => prev.map((current) => (
+      current.id === task.id
+        ? { ...current, status: 'failed', errorMessage: pollResult.errorMessage || '视频生成失败' }
+        : current
+    )));
+
+    if (pollResult.status === 'failed') {
+      alert(`视频生成失败: ${pollResult.errorMessage || '未知错误'}`);
+    }
+  }, [apiKey]);
+
+  const handleGenerate = useCallback(async (data: GenerateData) => {
     if (!apiKey.trim()) {
       alert('请先输入您的 API 密钥');
       setActiveNav('settings');
       return;
     }
 
-    for (const promptText of data.prompts) {
-      const task = createTask(promptText, data);
-      setTasks(prev => [task, ...prev]);
+    const useBatchVariations = data.generationType === 'image'
+      && data.prompts.length === 1
+      && data.imageCount > 1;
+
+    let promptsToRun = data.prompts;
+    if (useBatchVariations) {
+      promptsToRun = await batchOptimizePrompts(apiKey, data.prompts[0], data.imageCount);
+    }
+
+    const batchId = promptsToRun.length > 1 ? generateId() : undefined;
+    const batchLabel = batchId
+      ? `${data.generationType === 'image' ? '图片批次' : '视频批次'} ${promptsToRun.length}`
+      : undefined;
+
+    for (const promptText of promptsToRun) {
+      const task = createTask(promptText, data, {
+        batchId,
+        batchLabel,
+      });
+
+      setTasks((prev) => [task, ...prev]);
       addTaskToStorage(task);
 
       try {
-        // 图像生成
         if (data.generationType === 'image') {
-          console.log('[App] 开始图像生成，模型:', data.model);
-          
-          const geminiOptions = {
-            aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
-            resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
-            negativePrompt: data.negativePrompt,
-          };
-          const referenceImages = [data.imageData, data.imageData2].filter((value): value is string => Boolean(value));
-
-          const result = await createGeminiImage(
-            apiKey,
-            promptText,
-            data.geminiSubModel,
-            geminiOptions,
-            referenceImages.length > 0 ? referenceImages : undefined
-          );
-
-          // 图像生成完成（Gemini 是同步返回）
-          if (result.status === 'completed' && result.imageUrl) {
-            console.log('[App] 图像生成完成:', result);
-            console.log('[App] 图片 URL:', result.imageUrl.substring(0, 100) + '...');
-            console.log('[App] 任务 generationType:', task.generationType);
-
-            const storedImageUrl = result.imageUrl.startsWith('data:image')
-              ? await saveImageData(task.id, result.imageUrl)
-              : result.imageUrl;
-
-            setTasks(prev => prev.map(t =>
-              t.id === task.id ? {
-                ...t,
-                status: 'completed',
-                videoUrl: storedImageUrl,
-                progress: 100,
-                completedAt: new Date(),
-              } : t
-            ));
-
-            // 添加到历史记�?
-            addHistory({
-              id: task.id,
-              prompt: promptText,
-              model: data.model as VideoModel,
-              createdAt: new Date(),
-              videoUrl: storedImageUrl,
-              thumbnailUrl: storedImageUrl,
-              options: {
-                subModel: data.geminiSubModel,
-                aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
-                resolution: data.resolution as '720P' | '1080P' | '2K' | '4K',
-              },
-              generationType: 'image',
-            });
-          } else {
-            // 生成失败
-            setTasks(prev => prev.map(t =>
-              t.id === task.id ? { ...t, status: 'failed', errorMessage: '图像生成失败' } : t
-            ));
-          }
-          
-          continue; // 跳过后续视频轮询逻辑
-        }
-
-        // 视频生成
-        const veoOptions = {
-          aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
-          duration: data.duration,
-          negativePrompt: data.negativePrompt,
-        };
-
-        const soraOptions = {
-          aspectRatio: data.aspectRatio,
-          duration: data.duration,
-        };
-
-        const grokOptions = {
-          aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1',
-          duration: data.duration,
-          audioEnabled: true, // 音画同出
-        };
-
-        let result;
-        if (data.model === 'veo') {
-          if (data.imageData) {
-            result = await createVeoVideoWithImage(
-              apiKey,
-              promptText,
-              data.imageData,
-              data.veoSubModel,
-              veoOptions
-            );
-          } else {
-            result = await createVeoVideoAuto(apiKey, promptText, data.veoSubModel, veoOptions);
-          }
-        } else if (data.model === 'grok') {
-          if (data.imageData) {
-            result = await createGrokVideoWithImage(
-              apiKey,
-              promptText,
-              data.imageData,
-              data.grokSubModel,
-              grokOptions
-            );
-          } else {
-            result = await createGrokVideo(apiKey, promptText, data.grokSubModel, grokOptions);
-          }
+          await finalizeImageTask(task, promptText, data);
         } else {
-          if (data.imageData) {
-            result = await createSoraVideoWithImage(
-              apiKey,
-              promptText,
-              data.imageData,
-              data.soraSubModel,
-              soraOptions
-            );
-          } else {
-            result = await createSoraVideo(apiKey, promptText, data.soraSubModel, soraOptions);
-          }
-        }
-
-        const subModel = data.model === 'veo' ? data.veoSubModel : data.model === 'grok' ? data.grokSubModel : data.soraSubModel;
-
-        const pollResult = await pollTaskStatus(
-          apiKey,
-          data.model as VideoModel,
-          result.taskId,
-          subModel,
-          (status, progress) => {
-            setTasks(prev => prev.map(t =>
-              t.id === task.id ? { ...t, status, progress } : t
-            ));
-          }
-        );
-
-        if (pollResult.status === 'completed' && pollResult.videoUrl) {
-          const finalVideoUrl = pollResult.videoUrl;
-          const finalThumbnailUrl = pollResult.thumbnailUrl;
-
-          setTasks(prev => prev.map(t =>
-            t.id === task.id ? {
-              ...t,
-              status: 'completed',
-              videoUrl: finalVideoUrl,
-              thumbnailUrl: finalThumbnailUrl,
-              progress: 100
-            } : t
-          ));
-
-          addHistory({
-            id: task.id,
-            prompt: promptText,
-            model: data.model as VideoModel,
-            createdAt: new Date(),
-            videoUrl: finalVideoUrl,
-            thumbnailUrl: finalThumbnailUrl,
-            duration: data.duration,
-            options: data.model === 'veo'
-              ? { subModel: data.veoSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, negativePrompt: data.negativePrompt, imageType: data.imageType }
-              : { subModel: data.soraSubModel, aspectRatio: data.aspectRatio, duration: data.duration },
-          });
-        } else if (pollResult.status === 'failed') {
-          setTasks(prev => prev.map(t =>
-            t.id === task.id ? { ...t, status: 'failed', errorMessage: pollResult.errorMessage } : t
-          ));
-          console.error('视频生成失败:', pollResult.errorMessage);
-          alert(`视频生成失败: ${pollResult.errorMessage || '未知错误'}`);
+          await finalizeVideoTask(task, promptText, data);
         }
       } catch (error) {
-        setTasks(prev => prev.map(t =>
-          t.id === task.id ? { ...t, status: 'failed', errorMessage: error instanceof Error ? error.message : '未知错误' } : t
-        ));
-        console.error('Generation error:', error);
+        console.error('[App] Generation failed:', error);
+        setTasks((prev) => prev.map((current) => (
+          current.id === task.id
+            ? {
+                ...current,
+                status: 'failed',
+                errorMessage: error instanceof Error ? error.message : '未知错误',
+              }
+            : current
+        )));
         alert(`生成出错: ${error instanceof Error ? error.message : '未知错误'}`);
       }
     }
-  };
+  }, [apiKey, createTask, finalizeImageTask, finalizeVideoTask]);
 
-  const createTask = (promptText: string, data: GenerateData): VideoTask => {
-    return {
-      id: generateId(),
-      prompt: promptText,
-      model: data.model as VideoModel,
-      status: 'pending',
-      createdAt: new Date(),
-      progress: 0,
-      generationType: data.generationType,
-      options: data.generationType === 'image'
-        ? { subModel: data.geminiSubModel, aspectRatio: data.aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4', resolution: data.resolution as '720P' | '1080P' | '2K' | '4K' }
-        : data.model === 'veo'
-          ? { subModel: data.veoSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, negativePrompt: data.negativePrompt, imageType: data.imageType }
-          : data.model === 'grok'
-            ? { subModel: data.grokSubModel, aspectRatio: data.aspectRatio as '16:9' | '9:16' | '1:1', duration: data.duration, audioEnabled: true }
-            : { subModel: data.soraSubModel, aspectRatio: data.aspectRatio, duration: data.duration },
-      imageData: data.imageData,
-      position: { x: 100 + (Math.random() * 200), y: 100 + (Math.random() * 200) },
-    };
-  };
+  const handleUseBatchAsVideoSource = useCallback(async (
+    task: VideoTask,
+    options?: VideoBatchRunOptions
+  ) => {
+    if (!task.batchId) {
+      await handleUseTaskAsVideoSource(task);
+      return;
+    }
+
+    const batchItems = imageTasks.filter((item) => (
+      item.batchId === task.batchId
+      && item.generationType === 'image'
+      && item.status === 'completed'
+      && item.videoUrl
+    ));
+
+    if (batchItems.length === 0) {
+      alert('这批图片还没有可用素材');
+      return;
+    }
+
+    const seedImages = await Promise.all(batchItems.map(async (item) => ({
+      task: item,
+      dataUrl: await resolveImageDataUrl(item.videoUrl),
+    })));
+
+    const validSeeds = seedImages.filter((item): item is { task: VideoTask; dataUrl: string } => Boolean(item.dataUrl));
+    if (validSeeds.length === 0) {
+      alert('这批图片暂时无法读取为视频输入');
+      return;
+    }
+
+    const videoModel = options?.model || 'veo';
+    const duration = options?.duration || 4;
+    const prompt = options?.prompt || task.prompt;
+    const batchId = generateId();
+    const batchLabel = `视频批次 ${validSeeds.length}`;
+
+    for (const seed of validSeeds) {
+      const videoData: GenerateData = {
+        generationType: 'video',
+        model: videoModel,
+        veoSubModel,
+        soraSubModel,
+        grokSubModel,
+        imageSubModel,
+        prompts: [prompt],
+        imageData: seed.dataUrl,
+        imageType: 'reference',
+        aspectRatio: (
+          (seed.task.options && 'aspectRatio' in seed.task.options && typeof seed.task.options.aspectRatio === 'string')
+            ? seed.task.options.aspectRatio
+            : '16:9'
+        ) as '16:9' | '9:16' | '1:1' | '4:3' | '3:4',
+        duration,
+        resolution: '2K',
+        negativePrompt: '',
+        imageCount: 1,
+        variationCount: 1,
+      };
+
+      const videoTask = createTask(prompt, videoData, {
+        batchId,
+        batchLabel,
+        sourceTaskId: seed.task.id,
+      });
+
+      setTasks((prev) => [videoTask, ...prev]);
+      addTaskToStorage(videoTask);
+
+      try {
+        await finalizeVideoTask(videoTask, prompt, videoData);
+      } catch (error) {
+        console.error('[App] Batch video generation failed:', error);
+        setTasks((prev) => prev.map((current) => (
+          current.id === videoTask.id
+            ? {
+                ...current,
+                status: 'failed',
+                errorMessage: error instanceof Error ? error.message : '未知错误',
+              }
+            : current
+        )));
+      }
+    }
+
+    setGenerationType('video');
+    setModel(videoModel);
+    setActiveNav('tasks');
+  }, [
+    createTask,
+    finalizeVideoTask,
+    grokSubModel,
+    handleUseTaskAsVideoSource,
+    imageSubModel,
+    imageTasks,
+    soraSubModel,
+    veoSubModel,
+  ]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex overflow-hidden">
@@ -387,13 +590,25 @@ function App() {
           veoSubModel={veoSubModel}
           soraSubModel={soraSubModel}
           grokSubModel={grokSubModel}
-          geminiSubModel={geminiSubModel}
+          imageSubModel={imageSubModel}
           batchMode={batchMode}
           onModelChange={handleModelChange}
-          onVeoSubModelChange={handleVeoSubModelChange}
-          onSoraSubModelChange={handleSoraSubModelChange}
-          onGrokSubModelChange={handleGrokSubModelChange}
-          onGeminiSubModelChange={handleGeminiSubModelChange}
+          onVeoSubModelChange={(value) => {
+            setVeoSubModel(value);
+            updateSettings({ defaultVeoSubModel: value });
+          }}
+          onSoraSubModelChange={(value) => {
+            setSoraSubModel(value);
+            updateSettings({ defaultSoraSubModel: value });
+          }}
+          onGrokSubModelChange={(value) => {
+            setGrokSubModel(value);
+            updateSettings({ defaultGrokSubModel: value });
+          }}
+          onImageSubModelChange={(value) => {
+            setImageSubModel(value);
+            updateSettings({ defaultImageSubModel: value });
+          }}
           onBatchModeChange={setBatchMode}
         />
 
@@ -404,7 +619,7 @@ function App() {
                 <div className="flex items-center justify-between mb-8">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">灵感模板</h2>
-                    <p className="text-gray-500">ѡ��һ����ʾ��ģ�忪ʼ����</p>
+                    <p className="text-gray-500">选择一个提示词模板开始创作</p>
                   </div>
                   <button
                     onClick={() => setActiveNav('generate')}
@@ -414,9 +629,6 @@ function App() {
                   </button>
                 </div>
                 <PromptTemplates onSelect={(prompt) => {
-                  // This will be handled by BottomEditor since we pass prompt as initialPrompt?
-                  // Wait, BottomEditor doesn't take initialPrompt. VideoGenerator did.
-                  // I need to make sure BottomEditor takes the prompt or we have a way to set it.
                   setGlobalPrompt(prompt);
                   setActiveNav('generate');
                 }} />
@@ -430,7 +642,7 @@ function App() {
                 <div className="flex items-center justify-between mb-8">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">历史档案</h2>
-                    <p className="text-gray-500">�鿴��ʷ��¼���������</p>
+                    <p className="text-gray-500">查看历史记录并复用灵感</p>
                   </div>
                   <button
                     onClick={() => setActiveNav('generate')}
@@ -453,6 +665,8 @@ function App() {
               onTaskClick={setSelectedTask}
               onUpdateTaskPosition={handleUpdateTaskPosition}
               onRemoveTask={handleDeleteTask}
+              onUseAsVideoSource={handleUseTaskAsVideoSource}
+              onUseBatchAsVideoSource={handleUseBatchAsVideoSource}
             />
           )}
 
@@ -463,48 +677,45 @@ function App() {
                   <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-3xl">⚙️</div>
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">应用设置</h2>
-                    <p className="text-gray-500">�������� API ���ú�Ĭ�ϲ���</p>
+                    <p className="text-gray-500">管理您的 API 配置和默认参数</p>
                   </div>
                 </div>
 
                 <div className="space-y-8">
-                  {/* API Section */}
                   <section className="space-y-4">
                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest border-b pb-2">API 设置</h3>
 
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">API 密钥 (API Key)</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">API 密钥</label>
                       <input
                         type="password"
                         value={apiKey}
-                        onChange={(e) => handleApiKeyChange(e.target.value)}
-                        placeholder="请输入您�?API 密钥..."
+                        onChange={(event) => handleApiKeyChange(event.target.value)}
+                        placeholder="请输入您的 API 密钥..."
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
                       />
                       <p className="mt-2 text-xs text-gray-400">目前支持 allapi.store 及其兼容的中转站</p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">API 中转/基础地址 (Proxy Base URL)</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">API 中转基础地址</label>
                       <input
                         type="text"
                         value={appSettings.apiBaseUrl}
-                        onChange={(e) => updateSettings({ apiBaseUrl: e.target.value })}
+                        onChange={(event) => updateSettings({ apiBaseUrl: event.target.value })}
                         placeholder="https://..."
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all font-mono"
                       />
-                      <p className="mt-2 text-xs text-gray-400">���ʹ���Խ���תվ������д���� /v1 �Ļ�����ַ</p>
+                      <p className="mt-2 text-xs text-gray-400">如果使用自建中转站，请填写包含 `/v1` 的基础地址</p>
                     </div>
                   </section>
 
-                  {/* Redesign Note */}
                   <section className="p-6 bg-blue-50 rounded-2xl border border-blue-100">
                     <h4 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
-                      <span className="text-lg">🎨</span> UI 风格提示
+                      <span className="text-lg">🎨</span> 当前工作流
                     </h4>
                     <p className="text-sm text-blue-800 leading-relaxed">
-                      ��ǰ���������޻���ģʽ���������ڡ����ɡ��͡�����ҳ������ק�ڵ㡢������ͼ��
-                      ��� AI �Ż����ܲ����ã����ȼ���Ϸ� API ������ַ���á�
+                      现在支持用 image2 先批量生成图片，再将同一批图片一键生成短视频。你也可以从画布里选中任意单张图片，继续走图生视频流程。
                     </p>
                   </section>
                 </div>
@@ -522,28 +733,32 @@ function App() {
           veoSubModel={veoSubModel}
           soraSubModel={soraSubModel}
           grokSubModel={grokSubModel}
-          geminiSubModel={geminiSubModel}
+          imageSubModel={imageSubModel}
           batchMode={batchMode}
           onGenerate={handleGenerate}
           onGenerationTypeChange={handleGenerationTypeChange}
           initialPrompt={globalPrompt}
           onPromptUsed={() => setGlobalPrompt('')}
+          seedImages={editorSeedImages}
+          onSeedImagesConsumed={() => setEditorSeedImages([])}
         />
       )}
 
       <RightRail
         selectedTask={selectedTask}
+        tasks={tasks}
         onTaskClick={setSelectedTask}
         onPromptSelect={(prompt) => {
           setGlobalPrompt(prompt);
           setActiveNav('generate');
         }}
+        onUseAsVideoSource={handleUseTaskAsVideoSource}
+        onUseBatchAsVideoSource={handleUseBatchAsVideoSource}
       />
 
-      {/* Task Detail Modal */}
       {selectedTask && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" onClick={() => setSelectedTask(null)}>
-          <div className="bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold text-gray-900">任务详情</h3>
               <button
@@ -555,18 +770,20 @@ function App() {
                 </svg>
               </button>
             </div>
+
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">��ʾ��</label>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">提示词</label>
                 <p className="text-sm text-gray-800 mt-1.5 p-4 bg-gray-50 rounded-xl border border-gray-100">{selectedTask.prompt}</p>
               </div>
+
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">模型</label>
                   <p className="text-sm text-gray-800 mt-1 font-semibold uppercase">{selectedTask.model}</p>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">״̬</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">状态</label>
                   <p className="text-sm text-gray-800 mt-1 font-semibold uppercase">{selectedTask.status}</p>
                 </div>
                 <div>
@@ -574,15 +791,43 @@ function App() {
                   <p className="text-sm text-gray-800 mt-1">{selectedTask.createdAt.toLocaleString()}</p>
                 </div>
               </div>
+
+              {selectedTask.batchLabel && (
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">批次</label>
+                  <p className="text-sm text-purple-700 mt-1 font-semibold">{selectedTask.batchLabel}</p>
+                </div>
+              )}
+
               {selectedTask.errorMessage && (
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">错误信息</label>
                   <p className="text-sm text-red-600 mt-1.5 p-4 bg-red-50 rounded-xl border border-red-100">{selectedTask.errorMessage}</p>
                 </div>
               )}
+
+              {selectedTask.generationType === 'image' && (
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => void handleUseTaskAsVideoSource(selectedTask)}
+                    className="px-5 py-3 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
+                  >
+                    用这张图生成视频
+                  </button>
+                  {selectedTask.batchId && (
+                    <button
+                      onClick={() => void handleUseBatchAsVideoSource(selectedTask)}
+                      className="px-5 py-3 text-sm font-semibold text-purple-700 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors"
+                    >
+                      用这批图一键生成视频
+                    </button>
+                  )}
+                </div>
+              )}
+
               {selectedTask.videoUrl && (
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">视频链接</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">素材链接</label>
                   <div className="mt-2 flex gap-3">
                     <input
                       type="text"
@@ -591,7 +836,7 @@ function App() {
                       className="flex-1 px-4 py-3 text-sm border border-gray-100 rounded-xl bg-gray-50 focus:outline-none"
                     />
                     <button
-                      onClick={() => navigator.clipboard.writeText(selectedTaskMediaUrl || selectedTask.videoUrl!)}
+                      onClick={() => navigator.clipboard.writeText(selectedTaskMediaUrl || selectedTask.videoUrl || '')}
                       className="px-5 py-3 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
                     >
                       复制
@@ -616,4 +861,3 @@ function App() {
 }
 
 export default App;
-

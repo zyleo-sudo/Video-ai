@@ -1,34 +1,26 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { 
-  VideoModel, 
-  VeoSubModel, 
-  SoraSubModel, 
-  GrokSubModel, 
-  GeminiSubModel, 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
   GenerationType,
-  ImageModel 
+  GrokSubModel,
+  ImageModel,
+  ImageSubModel,
+  SoraSubModel,
+  VeoSubModel,
+  VideoModel,
 } from '../../types';
-import { 
-  ASPECT_RATIOS, 
-  DURATION_OPTIONS, 
+import {
+  ASPECT_RATIOS,
+  DURATION_OPTIONS,
   IMAGE_RESOLUTION_OPTIONS,
-  generateId 
+  MODEL_CONFIGS,
+  generateId,
 } from '../../utils/constants';
-import { optimizePrompt, batchOptimizePrompts } from '../../services/allapi';
+import { batchOptimizePrompts, optimizePrompt } from '../../services/allapi';
 
-interface BottomEditorProps {
-  apiKey: string;
-  generationType: GenerationType;
-  model: VideoModel | ImageModel;
-  veoSubModel: VeoSubModel;
-  soraSubModel: SoraSubModel;
-  grokSubModel: GrokSubModel;
-  geminiSubModel: GeminiSubModel;
-  batchMode: boolean;
-  onGenerate: (data: GenerateData) => void;
-  onGenerationTypeChange: (type: GenerationType) => void;
-  initialPrompt?: string;
-  onPromptUsed?: () => void;
+interface SeedImage {
+  dataUrl: string;
+  prompt: string;
+  sourceTaskId: string;
 }
 
 interface GenerateData {
@@ -37,7 +29,7 @@ interface GenerateData {
   veoSubModel: VeoSubModel;
   soraSubModel: SoraSubModel;
   grokSubModel: GrokSubModel;
-  geminiSubModel: GeminiSubModel;
+  imageSubModel: ImageSubModel;
   prompts: string[];
   imageData?: string;
   imageData2?: string;
@@ -46,46 +38,31 @@ interface GenerateData {
   duration: number;
   resolution: string;
   negativePrompt: string;
+  imageCount: number;
+  variationCount: number;
+}
+
+interface BottomEditorProps {
+  apiKey: string;
+  generationType: GenerationType;
+  model: VideoModel | ImageModel;
+  veoSubModel: VeoSubModel;
+  soraSubModel: SoraSubModel;
+  grokSubModel: GrokSubModel;
+  imageSubModel: ImageSubModel;
+  batchMode: boolean;
+  onGenerate: (data: GenerateData) => void;
+  onGenerationTypeChange: (type: GenerationType) => void;
+  initialPrompt?: string;
+  onPromptUsed?: () => void;
+  seedImages?: SeedImage[];
+  onSeedImagesConsumed?: () => void;
 }
 
 interface BatchPrompt {
   id: string;
   prompt: string;
 }
-
-// 场景化优化配置
-const SCENE_OPTIMIZERS = {
-  temple: {
-    icon: '🏯',
-    label: '寺庙信仰',
-    color: 'amber',
-    options: [
-      { name: '佛像宏大', suffix: '+ 佛像巨大宏伟 + 人物渺小仰视 + 金光普照 + 庄严神圣 + 广角镜头 + 仰视视角 + 8K超清' },
-      { name: '女性菩萨', suffix: '+ 女性菩萨庄严形象 + 慈悲微笑 + 金色光芒 + 祥云环绕 + 人物在画面很小 + 佛光普照 + 电影级质感' },
-      { name: '和尚渺小', suffix: '+ 和尚身影渺小 + 虔诚礼佛 + 金碧辉煌背景 + 佛像巨大 + 仰视佛像 + 信仰之光 + 高清画质' },
-    ]
-  },
-  ecommerce: {
-    icon: '🛒',
-    label: '电商产品',
-    color: 'blue',
-    options: [
-      { name: '商业精品', suffix: '+ 产品主体突出 + 影棚专业布光 + 锐利细节 + 产品摄影 + 商业广告级 + 动态展示 + VEO优化' },
-      { name: '生活场景', suffix: '+ 产品场景代入 + 自然生活氛围 + 温馨明亮 + 正面积极 + 产品突出 + 情绪价值 + GROK优化' },
-      { name: '极简白底', suffix: '+ 产品主体放大 + 纯白背景 + 电商标准 + 清晰锐利 + 专业静物 + 商业质感 + VEO视频' },
-    ]
-  },
-  creative: {
-    icon: '✨',
-    label: '通用创意',
-    color: 'purple',
-    options: [
-      { name: '梦幻唯美', suffix: '+ 梦幻光晕 + 柔和色调 + 浪漫氛围 + 明亮通透 + 正面积极 + 电影感 + VEO动态' },
-      { name: '中国古风', suffix: '+ 水墨丹青 + 工笔细腻 + 金色点缀 + 古典韵味 + 宏大构图 + 非遗传承 + 诗意画面' },
-      { name: '明亮大气', suffix: '+ 阳光明媚 + 开阔大气 + 色彩明亮 + 主体突出 + 正面光影 + 电影质感 + 震撼画面' },
-    ]
-  }
-};
 
 export function BottomEditor({
   apiKey,
@@ -94,18 +71,22 @@ export function BottomEditor({
   veoSubModel,
   soraSubModel,
   grokSubModel,
-  geminiSubModel,
+  imageSubModel,
   batchMode,
   onGenerate,
   onGenerationTypeChange,
   initialPrompt,
   onPromptUsed,
+  seedImages = [],
+  onSeedImagesConsumed,
 }: BottomEditorProps) {
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1' | '4:3' | '3:4'>('16:9');
   const [duration, setDuration] = useState(4);
   const [resolution, setResolution] = useState('2K');
+  const [imageCount, setImageCount] = useState(4);
+  const [variationCount, setVariationCount] = useState(10);
   const [useImage, setUseImage] = useState(false);
   const [imageData, setImageData] = useState<string>();
   const [imageData2, setImageData2] = useState<string>();
@@ -113,19 +94,23 @@ export function BottomEditor({
   const [batchPrompts, setBatchPrompts] = useState<BatchPrompt[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isBatchOptimizing, setIsBatchOptimizing] = useState(false);
-  const [showScenePanel, setShowScenePanel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
 
-  // Filter aspect ratios based on generation type
-  const availableAspectRatios = generationType === 'image' 
-    ? ASPECT_RATIOS 
-    : ASPECT_RATIOS.filter(ar => ar.value === '16:9' || ar.value === '9:16' || ar.value === '1:1');
+  const supportsImageInput = generationType === 'image'
+    || (generationType === 'video' && MODEL_CONFIGS[model as VideoModel]?.supportsImage);
 
-  // Duration options for video only
-  const availableDurations = generationType === 'video' 
-    ? DURATION_OPTIONS[model as keyof typeof DURATION_OPTIONS] || [4]
-    : [];
+  const availableAspectRatios = useMemo(() => (
+    generationType === 'image'
+      ? ASPECT_RATIOS
+      : ASPECT_RATIOS.filter((item) => item.value === '16:9' || item.value === '9:16' || item.value === '1:1')
+  ), [generationType]);
+
+  const availableDurations = useMemo(() => (
+    generationType === 'video'
+      ? DURATION_OPTIONS[model as keyof typeof DURATION_OPTIONS] || [4]
+      : []
+  ), [generationType, model]);
 
   useEffect(() => {
     if (initialPrompt) {
@@ -134,44 +119,57 @@ export function BottomEditor({
     }
   }, [initialPrompt, onPromptUsed]);
 
-  // Reset duration when switching models
+  useEffect(() => {
+    if (seedImages.length === 0) {
+      return;
+    }
+
+    setUseImage(true);
+    setImageData(seedImages[0]?.dataUrl);
+    setImageData2(seedImages[1]?.dataUrl);
+    if (!prompt.trim()) {
+      setPrompt(seedImages[0]?.prompt || '');
+    }
+    onSeedImagesConsumed?.();
+  }, [onSeedImagesConsumed, prompt, seedImages]);
+
   useEffect(() => {
     if (generationType === 'video' && availableDurations.length > 0) {
       setDuration(availableDurations[0]);
     }
-  }, [model, generationType, availableDurations]);
+  }, [availableDurations, generationType, model]);
 
-  const handleImageSelect = () => {
-    fileInputRef.current?.click();
-  };
+  const handleFileSelect = useCallback((slot: 'primary' | 'secondary') => {
+    if (slot === 'primary') {
+      fileInputRef.current?.click();
+      return;
+    }
 
-  const handleImageSelect2 = () => {
     fileInputRef2.current?.click();
-  };
+  }, []);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setImageData(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleFileChange2 = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileChange = useCallback((slot: 'primary' | 'secondary', event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setImageData2(event.target?.result as string);
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        return;
+      }
+
+      if (slot === 'primary') {
+        setImageData(reader.result);
+      } else {
+        setImageData2(reader.result);
+      }
     };
     reader.readAsDataURL(file);
-  };
+  }, []);
 
-  const handleClearImages = () => {
+  const handleClearImages = useCallback(() => {
     setImageData(undefined);
     setImageData2(undefined);
     setUseImage(false);
@@ -181,13 +179,7 @@ export function BottomEditor({
     if (fileInputRef2.current) {
       fileInputRef2.current.value = '';
     }
-  };
-
-  // 应用场景优化
-  const applySceneOptimization = (suffix: string) => {
-    setPrompt(prev => prev.trim() ? `${prev} ${suffix}` : prev);
-    setShowScenePanel(false);
-  };
+  }, []);
 
   const handleOptimizePrompt = useCallback(async () => {
     if (!prompt.trim()) {
@@ -200,12 +192,12 @@ export function BottomEditor({
       const optimizedPrompt = await optimizePrompt(apiKey, prompt);
       setPrompt(optimizedPrompt);
     } catch (error) {
-      console.error('提示词优化失败:', error);
-      alert('提示词优化失败，请检查网络或API密钥');
+      console.error('[BottomEditor] Prompt optimize failed:', error);
+      alert('提示词优化失败，请检查网络或 API 密钥');
     } finally {
       setIsOptimizing(false);
     }
-  }, [prompt, apiKey]);
+  }, [apiKey, prompt]);
 
   const handleBatchOptimize = useCallback(async () => {
     if (!prompt.trim()) {
@@ -215,43 +207,40 @@ export function BottomEditor({
 
     setIsBatchOptimizing(true);
     try {
-      const variations = await batchOptimizePrompts(apiKey, prompt);
-      const newBatchPrompts = variations.map((variation) => ({
-        id: generateId(),
-        prompt: variation,
-      }));
-      setBatchPrompts(prev => [...prev, ...newBatchPrompts]);
-      alert(`已生成 ${variations.length} 个优化版本！`);
+      const targetCount = batchMode ? Math.max(2, variationCount) : Math.max(2, imageCount);
+      const variations = await batchOptimizePrompts(apiKey, prompt, targetCount);
+      setBatchPrompts((prev) => [
+        ...prev,
+        ...variations.map((variation) => ({ id: generateId(), prompt: variation })),
+      ]);
     } catch (error) {
-      console.error('批量优化失败:', error);
-      alert('批量优化失败，请检查网络或API密钥');
+      console.error('[BottomEditor] Batch optimize failed:', error);
+      alert('批量变体生成失败，请检查网络或 API 密钥');
     } finally {
       setIsBatchOptimizing(false);
     }
-  }, [prompt, apiKey]);
+  }, [apiKey, batchMode, imageCount, prompt, variationCount]);
 
-  const addBatchPrompt = () => {
-    if (prompt.trim()) {
-      setBatchPrompts(prev => [...prev, { id: generateId(), prompt: prompt.trim() }]);
-      setPrompt('');
+  const handleAddBatchPrompt = useCallback(() => {
+    if (!prompt.trim()) {
+      return;
     }
-  };
 
-  const removeBatchPrompt = (id: string) => {
-    setBatchPrompts(prev => prev.filter(bp => bp.id !== id));
-  };
+    setBatchPrompts((prev) => [...prev, { id: generateId(), prompt: prompt.trim() }]);
+    setPrompt('');
+  }, [prompt]);
 
-  const handleGenerate = () => {
+  const handleGenerate = useCallback(() => {
     if (!apiKey.trim()) {
       alert('请先输入您的 API 密钥');
       return;
     }
 
     const promptsToProcess = batchMode
-      ? batchPrompts.filter(bp => bp.prompt.trim()).map(bp => bp.prompt)
+      ? batchPrompts.filter((item) => item.prompt.trim()).map((item) => item.prompt)
       : [prompt.trim()];
 
-    if (promptsToProcess.length === 0) {
+    if (promptsToProcess.length === 0 || !promptsToProcess[0]) {
       alert('请至少输入一个提示词');
       return;
     }
@@ -262,58 +251,77 @@ export function BottomEditor({
       veoSubModel,
       soraSubModel,
       grokSubModel,
-      geminiSubModel,
+      imageSubModel,
       prompts: promptsToProcess,
       imageData: useImage ? imageData : undefined,
-      imageData2: useImage && (
-        generationType === 'image' ||
-        (generationType === 'video' && imageType === 'start-end')
-      ) ? imageData2 : undefined,
+      imageData2: useImage && (generationType === 'image' || imageType === 'start-end') ? imageData2 : undefined,
       imageType: generationType === 'video' && useImage ? imageType : undefined,
       aspectRatio,
       duration,
       resolution,
       negativePrompt,
+      imageCount,
+      variationCount,
     });
-  };
+  }, [
+    apiKey,
+    aspectRatio,
+    batchMode,
+    batchPrompts,
+    duration,
+    generationType,
+    grokSubModel,
+    imageCount,
+    imageData,
+    imageData2,
+    imageSubModel,
+    imageType,
+    model,
+    negativePrompt,
+    onGenerate,
+    prompt,
+    resolution,
+    soraSubModel,
+    useImage,
+    variationCount,
+    veoSubModel,
+  ]);
 
   return (
     <div className="fixed bottom-0 left-20 right-0 bg-white border-t border-gray-200 p-6 z-50">
       <div className="max-w-6xl mx-auto">
-        {/* Generation Type Toggle */}
         <div className="flex items-center gap-2 mb-4">
           <button
             onClick={() => onGenerationTypeChange('image')}
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
-              generationType === 'image' 
-                ? 'bg-purple-50 text-purple-600' 
+              generationType === 'image'
+                ? 'bg-purple-50 text-purple-600'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            🎨 生图
+            生图
           </button>
           <button
             onClick={() => onGenerationTypeChange('video')}
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
-              generationType === 'video' 
-                ? 'bg-blue-50 text-blue-600' 
+              generationType === 'video'
+                ? 'bg-blue-50 text-blue-600'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            🎬 生视频
+            生视频
           </button>
         </div>
 
-        {/* Image/Video Upload */}
-        {(generationType === 'image' || (generationType === 'video' && (model === 'veo' || model === 'grok'))) && (
-          <div className="flex items-center gap-2 mb-4">
+        {supportsImageInput && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             <button
               onClick={() => setUseImage(false)}
               className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
                 !useImage ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              文字输入
+              纯文本
             </button>
             <button
               onClick={() => setUseImage(true)}
@@ -326,7 +334,7 @@ export function BottomEditor({
 
             {useImage && generationType === 'video' && (
               <>
-                <div className="h-6 w-px bg-gray-300 mx-2" />
+                <div className="h-6 w-px bg-gray-300 mx-1" />
                 <button
                   onClick={() => setImageType('reference')}
                   className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
@@ -349,29 +357,29 @@ export function BottomEditor({
             {useImage && (
               <>
                 <button
-                  onClick={handleImageSelect}
-                  className="ml-2 px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"
+                  onClick={() => handleFileSelect('primary')}
+                  className="px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"
                 >
                   {generationType === 'image'
-                    ? (imageData ? 'Replace Ref A' : 'Select Ref A')
-                    : (imageData ? 'Replace Image' : 'Select Image')}
+                    ? imageData ? '替换参考图 A' : '选择参考图 A'
+                    : imageData ? '替换起始图' : '选择起始图'}
                 </button>
-                {(generationType === 'image' || (generationType === 'video' && imageType === 'start-end')) && (
+                {(generationType === 'image' || imageType === 'start-end') && (
                   <button
-                    onClick={handleImageSelect2}
+                    onClick={() => handleFileSelect('secondary')}
                     className="px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"
                   >
                     {generationType === 'image'
-                      ? (imageData2 ? 'Replace Ref B' : 'Select Ref B')
-                      : (imageData2 ? 'Replace End Frame' : 'Select End Frame')}
+                      ? imageData2 ? '替换参考图 B' : '选择参考图 B'
+                      : imageData2 ? '替换结束图' : '选择结束图'}
                   </button>
                 )}
                 {(imageData || imageData2) && (
                   <button
                     onClick={handleClearImages}
-                    className="ml-2 text-xs font-semibold text-red-600 hover:text-red-800"
+                    className="text-xs font-semibold text-red-600 hover:text-red-800"
                   >
-                    Clear
+                    清空图片
                   </button>
                 )}
               </>
@@ -380,32 +388,51 @@ export function BottomEditor({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png"
-              onChange={handleFileChange}
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => handleFileChange('primary', event)}
               className="hidden"
             />
             <input
               ref={fileInputRef2}
               type="file"
-              accept="image/jpeg,image/png"
-              onChange={handleFileChange2}
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => handleFileChange('secondary', event)}
               className="hidden"
             />
           </div>
         )}
 
-        {/* Prompt Input */}
+        {useImage && imageData && (
+          <div className="mb-4 flex flex-wrap gap-3">
+            <div className="flex items-center gap-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-xl">
+              <img src={imageData} alt="seed-a" className="w-14 h-14 rounded-lg object-cover" />
+              <div className="text-xs text-blue-700">
+                <div className="font-semibold">已接入主参考图</div>
+                <div>这张图会作为下一次生成的输入</div>
+              </div>
+            </div>
+            {imageData2 && (
+              <div className="flex items-center gap-3 px-3 py-2 bg-purple-50 border border-purple-100 rounded-xl">
+                <img src={imageData2} alt="seed-b" className="w-14 h-14 rounded-lg object-cover" />
+                <div className="text-xs text-purple-700">
+                  <div className="font-semibold">{generationType === 'image' ? '已接入第二参考图' : '已接入结束帧'}</div>
+                  <div>{generationType === 'image' ? '会参与图像融合生成' : '会参与视频首尾过渡'}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {!batchMode ? (
           <div className="mb-4">
             <div className="relative">
               <textarea
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={generationType === 'image' ? "描述您想要生成的图像..." : "描述您想要生成的视频内容..."}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder={generationType === 'image' ? '描述你想生成的图片...' : '描述你想生成的视频内容...'}
                 rows={3}
                 className="w-full px-4 py-3 pr-36 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
               />
-              {/* AI Optimize Buttons */}
               <div className="absolute top-2 right-2 flex gap-1">
                 <button
                   onClick={handleOptimizePrompt}
@@ -416,65 +443,22 @@ export function BottomEditor({
                       : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
                   }`}
                 >
-                  {isOptimizing ? '优化中...' : 'AI优化'}
+                  {isOptimizing ? '优化中...' : 'AI 优化'}
                 </button>
-                <button
-                  onClick={handleBatchOptimize}
-                  disabled={isBatchOptimizing || !prompt.trim()}
-                  className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all ${
-                    isBatchOptimizing || !prompt.trim()
-                      ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                      : 'text-purple-600 bg-purple-50 hover:bg-purple-100'
-                  }`}
-                  title="一键生成5个不同风格的变体"
-                >
-                  {isBatchOptimizing ? '生成中...' : '批量×5'}
-                </button>
-              </div>
-            </div>
-
-            {/* 场景优化快捷按钮 - 手动点击触发 */}
-            <div className="mt-2 flex flex-wrap gap-2">
-              {Object.entries(SCENE_OPTIMIZERS).map(([key, scene]) => (
-                <div key={key} className="relative">
+                {generationType === 'image' && (
                   <button
-                    onClick={() => setShowScenePanel(!showScenePanel)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
-                      showScenePanel
-                        ? 'bg-amber-50 text-amber-600 border-2 border-amber-300'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    onClick={handleBatchOptimize}
+                    disabled={isBatchOptimizing || !prompt.trim()}
+                    className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all ${
+                      isBatchOptimizing || !prompt.trim()
+                        ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                        : 'text-purple-600 bg-purple-50 hover:bg-purple-100'
                     }`}
                   >
-                    <span>{scene.icon}</span>
-                    <span>{scene.label}</span>
-                    <svg className={`w-3 h-3 transition-transform ${showScenePanel ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                    {isBatchOptimizing ? '生成中...' : `场景变体 x${imageCount}`}
                   </button>
-
-                  {/* 场景选项下拉面板 */}
-                  {showScenePanel && (
-                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-xl shadow-xl border border-gray-200 p-3 min-w-[320px] z-50">
-                      <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
-                        <span>{scene.icon}</span>
-                        <span>选择{scene.label}风格（点击应用）</span>
-                      </div>
-                      <div className="space-y-2">
-                        {scene.options.map((opt, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => applySceneOptimization(opt.suffix)}
-                            className="w-full text-left px-3 py-2 text-xs bg-gray-50 hover:bg-amber-50 rounded-lg transition-colors border border-transparent hover:border-amber-200"
-                          >
-                            <span className="font-semibold text-gray-700">{opt.name}</span>
-                            <span className="text-gray-400 ml-2">{opt.suffix}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                )}
+              </div>
             </div>
           </div>
         ) : (
@@ -482,37 +466,38 @@ export function BottomEditor({
             <div className="flex items-center gap-2">
               <textarea
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="输入提示词，然后点击添加..."
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="输入提示词，然后加入批量队列..."
                 rows={2}
                 className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
               />
               <button
-                onClick={addBatchPrompt}
+                onClick={handleAddBatchPrompt}
                 disabled={!prompt.trim()}
                 className="px-4 py-3 bg-blue-50 text-blue-600 font-semibold text-sm rounded-xl hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                添加
+                加入
               </button>
               <button
                 onClick={handleBatchOptimize}
                 disabled={isBatchOptimizing || !prompt.trim()}
                 className="px-4 py-3 bg-purple-50 text-purple-600 font-semibold text-sm rounded-xl hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isBatchOptimizing ? '生成中...' : 'AI批量×5'}
+                {isBatchOptimizing ? '生成中...' : `AI 批量 x${variationCount}`}
               </button>
             </div>
+
             {batchPrompts.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {batchPrompts.map((bp, idx) => (
+                {batchPrompts.map((item, index) => (
                   <div
-                    key={bp.id}
+                    key={item.id}
                     className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg border border-gray-200"
                   >
-                    <span className="text-xs font-bold text-gray-500">#{idx + 1}</span>
-                    <span className="text-sm text-gray-700 max-w-xs truncate">{bp.prompt}</span>
+                    <span className="text-xs font-bold text-gray-500">#{index + 1}</span>
+                    <span className="text-sm text-gray-700 max-w-xs truncate">{item.prompt}</span>
                     <button
-                      onClick={() => removeBatchPrompt(bp.id)}
+                      onClick={() => setBatchPrompts((prev) => prev.filter((entry) => entry.id !== item.id))}
                       className="text-gray-400 hover:text-red-600"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -526,60 +511,80 @@ export function BottomEditor({
           </div>
         )}
 
-        {/* Bottom Row: Controls */}
         <div className="flex items-center justify-between gap-4">
-          {/* Left: Settings */}
-          <div className="flex-1 flex items-center gap-3">
-            {/* Negative Prompt - Only for Veo */}
+          <div className="flex-1 flex flex-wrap items-center gap-3">
             {generationType === 'video' && model === 'veo' && (
               <input
                 type="text"
                 value={negativePrompt}
-                onChange={(e) => setNegativePrompt(e.target.value)}
+                onChange={(event) => setNegativePrompt(event.target.value)}
                 placeholder="反向提示词..."
                 className="w-48 px-3 py-2 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
               />
             )}
 
-            {/* Aspect Ratio */}
             <select
               value={aspectRatio}
-              onChange={(e) => setAspectRatio(e.target.value as '16:9' | '9:16' | '1:1' | '4:3' | '3:4')}
+              onChange={(event) => setAspectRatio(event.target.value as '16:9' | '9:16' | '1:1' | '4:3' | '3:4')}
               className="px-3 py-2 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              {availableAspectRatios.map(ar => (
-                <option key={ar.value} value={ar.value}>{ar.label}</option>
+              {availableAspectRatios.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
               ))}
             </select>
 
-            {/* Duration - Video only */}
             {generationType === 'video' && availableDurations.length > 0 && (
               <select
                 value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
+                onChange={(event) => setDuration(Number(event.target.value))}
                 className="px-3 py-2 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                {availableDurations.map(d => (
-                  <option key={d} value={d}>{d}秒</option>
+                {availableDurations.map((item) => (
+                  <option key={item} value={item}>{item} 秒</option>
                 ))}
               </select>
             )}
 
-            {/* Resolution - Image only */}
             {generationType === 'image' && (
-              <select
-                value={resolution}
-                onChange={(e) => setResolution(e.target.value)}
-                className="px-3 py-2 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              >
-                {IMAGE_RESOLUTION_OPTIONS.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
+              <>
+                <select
+                  value={resolution}
+                  onChange={(event) => setResolution(event.target.value)}
+                  className="px-3 py-2 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                >
+                  {IMAGE_RESOLUTION_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+                {!batchMode ? (
+                  <label className="flex items-center gap-2 px-3 py-2 border-2 border-gray-200 rounded-xl text-sm text-gray-700">
+                    数量
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={imageCount}
+                      onChange={(event) => setImageCount(Math.min(12, Math.max(1, Number(event.target.value) || 1)))}
+                      className="w-16 bg-transparent focus:outline-none"
+                    />
+                  </label>
+                ) : (
+                  <label className="flex items-center gap-2 px-3 py-2 border-2 border-gray-200 rounded-xl text-sm text-gray-700">
+                    变体数
+                    <input
+                      type="number"
+                      min={2}
+                      max={20}
+                      value={variationCount}
+                      onChange={(event) => setVariationCount(Math.min(20, Math.max(2, Number(event.target.value) || 2)))}
+                      className="w-16 bg-transparent focus:outline-none"
+                    />
+                  </label>
+                )}
+              </>
             )}
           </div>
 
-          {/* Right: Generate Button */}
           <button
             onClick={handleGenerate}
             disabled={!apiKey || (!batchMode && !prompt.trim()) || (batchMode && batchPrompts.length === 0)}
@@ -589,7 +594,9 @@ export function BottomEditor({
                 : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 disabled:from-gray-400 disabled:to-gray-400'
             } disabled:cursor-not-allowed`}
           >
-            {batchMode ? `生成 ${batchPrompts.length} 个${generationType === 'image' ? '图片' : '视频'}` : `生成${generationType === 'image' ? '图片' : '视频'}`}
+            {generationType === 'image'
+              ? `生成图片${batchMode ? ` (${batchPrompts.length} 条提示)` : ` x${imageCount}`}`
+              : `生成视频${batchMode ? ` (${batchPrompts.length} 条提示)` : ''}`}
           </button>
         </div>
       </div>

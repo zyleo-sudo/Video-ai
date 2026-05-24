@@ -22,12 +22,19 @@ function sanitizeTasksForStorage(tasks: VideoTask[]): VideoTask[] {
 }
 
 // API Key storage
+export function sanitizeApiKey(key: string): string {
+  return key
+    .replace(/^Bearer\s+/i, '')
+    .replace(/[\s\u200B-\u200D\uFEFF]+/g, '')
+    .trim();
+}
+
 export function getApiKey(): string {
-  return localStorage.getItem(STORAGE_KEYS.API_KEY) || '';
+  return sanitizeApiKey(localStorage.getItem(STORAGE_KEYS.API_KEY) || '');
 }
 
 export function setApiKey(key: string): void {
-  localStorage.setItem(STORAGE_KEYS.API_KEY, key);
+  localStorage.setItem(STORAGE_KEYS.API_KEY, sanitizeApiKey(key));
 }
 
 export function clearApiKey(): void {
@@ -42,15 +49,21 @@ export function getSettings(): AppSettings {
       const raw = JSON.parse(stored) as Record<string, unknown>;
       const parsed = { ...raw } as Record<string, unknown>;
 
-      // Backward compatibility for old Gemini image model key.
-      if (parsed.defaultModel === 'gemini-3-pro-image-preview') {
-        parsed.defaultModel = 'gemini-3.1-flash-image-preview';
+      // Backward compatibility for old image model keys.
+      if (parsed.defaultModel === 'gemini-3-pro-image-preview' || parsed.defaultModel === 'gemini-3.1-flash-image-preview') {
+        parsed.defaultModel = 'image2';
       }
-      if (parsed.defaultImageModel === 'gemini-3-pro-image-preview') {
-        parsed.defaultImageModel = 'gemini-3.1-flash-image-preview';
+      if (parsed.defaultImageModel === 'gemini-3-pro-image-preview' || parsed.defaultImageModel === 'gemini-3.1-flash-image-preview') {
+        parsed.defaultImageModel = 'image2';
       }
-      if (parsed.defaultGeminiSubModel === 'gemini-3-pro-image-preview') {
-        parsed.defaultGeminiSubModel = 'gemini-3.1-flash-image-preview';
+      if (parsed.defaultGeminiSubModel === 'gemini-3-pro-image-preview' || parsed.defaultGeminiSubModel === 'gemini-3.1-flash-image-preview') {
+        parsed.defaultGeminiSubModel = 'image2';
+      }
+      if (parsed.defaultGeminiSubModel && !parsed.defaultImageSubModel) {
+        parsed.defaultImageSubModel = parsed.defaultGeminiSubModel;
+      }
+      if (parsed.defaultImageSubModel === 'gemini-3-pro-image-preview' || parsed.defaultImageSubModel === 'gemini-3.1-flash-image-preview') {
+        parsed.defaultImageSubModel = 'image2';
       }
 
       return { ...DEFAULT_SETTINGS, ...parsed };

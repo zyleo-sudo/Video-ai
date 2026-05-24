@@ -1,16 +1,17 @@
 import { POLLING_CONFIG } from '../utils/constants';
-import { getSettings } from './storage';
+import { getSettings, sanitizeApiKey } from './storage';
 import {
-  VideoModel,
-  VeoOptions,
-  SoraOptions,
   GrokOptions,
+  SoraOptions,
   TaskStatus,
+  VeoOptions,
   VeoSubModel,
+  VideoModel,
 } from '../types';
 
-// 统一格式 API 支持的模型列表
-const UNIFIED_FORMAT_MODELS: VeoSubModel[] = [
+type JsonObject = Record<string, unknown>;
+
+const UNIFIED_VEO_MODELS: VeoSubModel[] = [
   'veo3.1-fast',
   'veo3.1-pro',
   'veo3.1-4k',
@@ -18,68 +19,234 @@ const UNIFIED_FORMAT_MODELS: VeoSubModel[] = [
   'veo3.1-fast-components',
 ];
 
-// 检查模型是否使用统一格式 API
-function isUnifiedFormat(model: string): boolean {
-  return UNIFIED_FORMAT_MODELS.includes(model as VeoSubModel);
+function isUnifiedVeoModel(model: VeoSubModel): boolean {
+  return UNIFIED_VEO_MODELS.includes(model);
 }
 
-// Create Veo video generation task (OpenAI format)
-export async function createVeoVideo(
-  apiKey: string,
-  prompt: string,
-  subModel: string = 'veo_3_1-fast-4K',
-  options: Omit<VeoOptions, 'subModel'> = {}
-): Promise<{ taskId: string; status: TaskStatus }> {
-  // 使用 OpenAI 格式视频创建端点
-  const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/videos`;
+function asObject(value: unknown): JsonObject {
+  return typeof value === 'object' && value !== null ? (value as JsonObject) : {};
+}
 
-  // OpenAI格式需要使用FormData
-  const formData = new FormData();
-  formData.append('model', subModel);
-  formData.append('prompt', prompt);
-  formData.append('seconds', String(options.duration || 2));
-  formData.append('watermark', 'false');
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
 
-  // 转换宽高比为OpenAI格式
+function readString(object: JsonObject, key: string): string | undefined {
+  const value = object[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readNumber(object: JsonObject, key: string): number | undefined {
+  const value = object[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function normalizeHeaders(headersInit?: HeadersInit): Record<string, string> {
+  const normalized: Record<string, string> = {};
+
+  if (!headersInit) {
+    return normalized;
+  }
+
+  if (headersInit instanceof Headers) {
+    headersInit.forEach((value, key) => {
+      normalized[key] = value;
+    });
+    return normalized;
+  }
+
+  if (Array.isArray(headersInit)) {
+    headersInit.forEach(([key, value]) => {
+      normalized[key] = value;
+    });
+    return normalized;
+  }
+
+  Object.entries(headersInit).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalized[key] = value;
+    }
+  });
+
+  return normalized;
+}
+
+function buildAuthorizationHeader(apiKey: string): string {
+  const normalizedApiKey = sanitizeApiKey(apiKey);
+
+  if (!normalizedApiKey) {
+    throw new Error('API Key 不能为空，请重新输入');
+  }
+
+  if (/[^\u0000-\u00FF]/.test(normalizedApiKey)) {
+    throw new Error('API Key 包含异常字符，请重新复制粘贴');
+  }
+
+  return `Bearer ${normalizedApiKey}`;
+}
+
+async function authorizedFetch(apiKey: string, input: string, init: RequestInit): Promise<Response> {
+  const headers = normalizeHeaders(init.headers);
+  headers.Authorization = buildAuthorizationHeader(apiKey);
+
+  return fetch(input, {
+    ...init,
+    headers,
+  });
+}
+
+function ratioToOpenAiSize(ratio: string): string {
   const ratioMap: Record<string, string> = {
     '16:9': '16x9',
     '9:16': '9x16',
     '1:1': '1x1',
+    '4:3': '4x3',
+    '3:4': '3x4',
   };
-  formData.append('size', ratioMap[options.aspectRatio || '16:9'] || '16x9');
 
-  console.log('[API] 调用 Veo 视频生成 API (OpenAI格式)');
-  console.log('[API] URL:', url);
-  console.log('[API] 子模型:', subModel);
-  console.log('[API] FormData: model=', subModel, 'prompt=', prompt, 'seconds=', String(options.duration || 2), 'size=', ratioMap[options.aspectRatio || '16:9']);
+  return ratioMap[ratio] || '16x9';
+}
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: formData,
-  });
+function base64ToBlob(base64: string): Blob {
+  const parts = base64.split(',');
+  const mime = parts[0]?.match(/:(.*?);/)?.[1] || 'image/png';
+  const bytes = atob(parts[1] || '');
+  const buffer = new Uint8Array(bytes.length);
 
-  console.log('[API] 响应状态:', response.status, response.statusText);
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    console.error('[API] 错误响应:', error);
-    throw new Error(error.message || `API error: ${response.status}`);
+  for (let index = 0; index < bytes.length; index += 1) {
+    buffer[index] = bytes.charCodeAt(index);
   }
 
-  const rawData = await response.json();
-  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+  return new Blob([buffer], { type: mime });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function mapStatus(status: string | undefined): TaskStatus {
+  const normalized = (status || '').toLowerCase();
+
+  if (['completed', 'succeeded', 'success'].includes(normalized)) {
+    return 'completed';
+  }
+  if (['failed', 'cancelled', 'canceled', 'error'].includes(normalized)) {
+    return 'failed';
+  }
+  if (['processing', 'running', 'in_progress'].includes(normalized)) {
+    return 'processing';
+  }
+
+  return 'pending';
+}
+
+async function parseJsonSafe(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+function extractMessage(data: unknown): string | undefined {
+  const object = asObject(data);
+  const direct = readString(object, 'message');
+  if (direct) {
+    return direct;
+  }
+
+  const error = asObject(object.error);
+  return readString(error, 'message');
+}
+
+function calculateImageDimensions(
+  resolution: '720P' | '1080P' | '2K' | '4K',
+  ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
+): { width: number; height: number } {
+  const longEdgeMap: Record<'720P' | '1080P' | '2K' | '4K', number> = {
+    '720P': 1280,
+    '1080P': 1920,
+    '2K': 2048,
+    '4K': 4096,
+  };
+
+  const ratioMap: Record<'1:1' | '16:9' | '9:16' | '4:3' | '3:4', { w: number; h: number }> = {
+    '1:1': { w: 1, h: 1 },
+    '16:9': { w: 16, h: 9 },
+    '9:16': { w: 9, h: 16 },
+    '4:3': { w: 4, h: 3 },
+    '3:4': { w: 3, h: 4 },
+  };
+
+  const maxSide = longEdgeMap[resolution];
+  const selectedRatio = ratioMap[ratio];
+
+  if (selectedRatio.w >= selectedRatio.h) {
+    return {
+      width: maxSide,
+      height: Math.round((maxSide * selectedRatio.h) / selectedRatio.w),
+    };
+  }
+
   return {
-    taskId: rawData.id,
-    status: mapVeoStatus(rawData.status),
+    width: Math.round((maxSide * selectedRatio.w) / selectedRatio.h),
+    height: maxSide,
   };
 }
 
-// Create Veo video generation task (统一格式 /v1/video/create)
+type TaskQueryResult = {
+  status: TaskStatus;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  progress?: number;
+  errorMessage?: string;
+};
+
+function parseTaskQueryResult(data: unknown): TaskQueryResult {
+  const object = asObject(data);
+
+  return {
+    status: mapStatus(readString(object, 'status')),
+    videoUrl: readString(object, 'video_url') || readString(object, 'url'),
+    thumbnailUrl: readString(object, 'cover_url') || readString(object, 'thumbnail_url'),
+    progress: readNumber(object, 'progress'),
+    errorMessage: extractMessage(data),
+  };
+}
+
+export async function createVeoVideo(
+  apiKey: string,
+  prompt: string,
+  subModel: string = 'veo_3_1-fast',
+  options: Omit<VeoOptions, 'subModel'> = {}
+): Promise<{ taskId: string; status: TaskStatus }> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/videos`;
+  const formData = new FormData();
+  formData.append('model', subModel);
+  formData.append('prompt', prompt);
+  formData.append('seconds', String(options.duration || 4));
+  formData.append('watermark', 'false');
+  formData.append('size', ratioToOpenAiSize(options.aspectRatio || '16:9'));
+
+  const response = await authorizedFetch(apiKey, url, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    body: formData,
+  });
+
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Veo create failed: ${response.status}`);
+  }
+
+  const object = asObject(data);
+  return {
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
+  };
+}
+
 export async function createVeoVideoUnified(
   apiKey: string,
   prompt: string,
@@ -89,398 +256,203 @@ export async function createVeoVideoUnified(
   const { apiBaseUrl } = getSettings();
   const url = `${apiBaseUrl}/video/create`;
 
-  const requestBody: {
-    model: string;
-    prompt: string;
-    aspect_ratio?: string;
-    enhance_prompt?: boolean;
-    images?: string[];
-  } = {
-    model: subModel,
-    prompt: prompt,
-    enhance_prompt: true,
-  };
-
-  // 统一格式使用 aspect_ratio 参数
-  if (options.aspectRatio) {
-    requestBody.aspect_ratio = options.aspectRatio;
-  } else {
-    requestBody.aspect_ratio = '16:9';
-  }
-
-  console.log('[API] 调用 Veo 视频生成 API (统一格式)');
-  console.log('[API] URL:', url);
-  console.log('[API] 子模型:', subModel);
-  console.log('[API] 请求体:', JSON.stringify(requestBody, null, 2));
-
-  const response = await fetch(url, {
+  const response = await authorizedFetch(apiKey, url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Accept: 'application/json',
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify({
+      model: subModel,
+      prompt,
+      aspect_ratio: options.aspectRatio || '16:9',
+      enhance_prompt: true,
+    }),
   });
 
-  console.log('[API] 响应状态:', response.status, response.statusText);
-
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    console.error('[API] 错误响应:', error);
-    throw new Error(error.message || `API error: ${response.status}`);
+    throw new Error(extractMessage(data) || `Veo unified create failed: ${response.status}`);
   }
 
-  const rawData = await response.json();
-  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+  const object = asObject(data);
   return {
-    taskId: rawData.id,
-    status: mapVeoStatus(rawData.status),
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
   };
 }
 
-// 统一入口：根据模型自动选择 API 格式
 export async function createVeoVideoAuto(
   apiKey: string,
   prompt: string,
   subModel: VeoSubModel = 'veo_3_1-fast',
   options: Omit<VeoOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
-  if (isUnifiedFormat(subModel)) {
-    return createVeoVideoUnified(apiKey, prompt, subModel, options);
-  } else {
-    return createVeoVideo(apiKey, prompt, subModel, options);
-  }
+  return isUnifiedVeoModel(subModel)
+    ? createVeoVideoUnified(apiKey, prompt, subModel, options)
+    : createVeoVideo(apiKey, prompt, subModel, options);
 }
 
-// Create Veo video with image input (OpenAI format)
 export async function createVeoVideoWithImage(
   apiKey: string,
   prompt: string,
   imageData: string,
-  subModel: string = 'veo_3_1-fast-4K',
+  subModel: string = 'veo_3_1-fast',
   options: Omit<VeoOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
-  // 使用 OpenAI 格式视频创建端点 (multipart/form-data)
   const { apiBaseUrl } = getSettings();
   const url = `${apiBaseUrl}/videos`;
-
   const formData = new FormData();
   formData.append('model', subModel);
   formData.append('prompt', prompt);
-  formData.append('seconds', String(options.duration || 2));
+  formData.append('seconds', String(options.duration || 4));
   formData.append('watermark', 'false');
+  formData.append('size', ratioToOpenAiSize(options.aspectRatio || '16:9'));
+  formData.append('input_reference', base64ToBlob(imageData), 'reference.png');
 
-  // 转换宽高比为OpenAI格式
-  const ratioMap: Record<string, string> = {
-    '16:9': '16x9',
-    '9:16': '9x16',
-    '1:1': '1x1',
-  };
-  formData.append('size', ratioMap[options.aspectRatio || '16:9'] || '16x9');
-
-  // 将base64图片转换为Blob
-  const imageBlob = base64ToBlob(imageData);
-  formData.append('input_reference', imageBlob, 'reference.png');
-
-  console.log('[API] 调用 Veo 图片转视频 API (OpenAI格式)');
-  console.log('[API] URL:', url);
-  console.log('[API] 子模型:', subModel);
-  console.log('[API] 提示词:', prompt);
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: formData,
-    });
-
-    console.log('[API] 响应状态:', response.status, response.statusText);
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      console.error('[API] 错误响应:', error);
-      throw new Error(error.message || `API error: ${response.status}`);
-    }
-
-    const rawData = await response.json();
-    console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
-    return {
-      taskId: rawData.id,
-      status: mapVeoStatus(rawData.status),
-    };
-  } catch (error) {
-    console.error('[API] 请求失败:', error);
-    throw error;
-  }
-}
-
-// Helper function to convert base64 to Blob
-function base64ToBlob(base64: string): Blob {
-  const parts = base64.split(',');
-  const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
-  const bstr = atob(parts[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-  return new Blob([u8arr], { type: mime });
-}
-
-// Query Veo task status (OpenAI format)
-export async function queryVeoTask(
-  apiKey: string,
-  taskId: string,
-  _model: string = 'veo_3_1-fast-4K'
-): Promise<{
-  status: TaskStatus;
-  videoUrl?: string;
-  thumbnailUrl?: string;
-  duration?: number;
-  progress?: number;
-  errorMessage?: string;
-}> {
-  // 使用 OpenAI 格式查询端点
-  const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/videos/${taskId}`;
-
-  console.log('[API] 查询 Veo 任务状态 (OpenAI格式)');
-  console.log('[API] URL:', url);
-
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+  const response = await authorizedFetch(apiKey, url, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    body: formData,
   });
 
-  console.log('[API] 查询响应状态:', response.status, response.statusText);
-
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    throw new Error(`Failed to query task: ${response.status}`);
+    throw new Error(extractMessage(data) || `Veo image-to-video failed: ${response.status}`);
   }
 
-  const rawData = await response.json();
-  console.log('[API] 查询响应原始数据:', JSON.stringify(rawData, null, 2));
-
-  // OpenAI格式API返回 { id, status, video_url, enhanced_prompt, status_update_time, progress, error }
+  const object = asObject(data);
   return {
-    status: mapVeoStatus(rawData.status),
-    videoUrl: rawData.video_url || undefined,
-    thumbnailUrl: undefined,
-    duration: rawData.seconds ? parseInt(rawData.seconds) : undefined,
-    progress: rawData.progress !== undefined ? rawData.progress : undefined,
-    errorMessage: rawData.error?.message || undefined,
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
   };
 }
 
-// Query Veo task status (统一格式)
-export async function queryVeoTaskUnified(
-  apiKey: string,
-  taskId: string
-): Promise<{
-  status: TaskStatus;
-  videoUrl?: string;
-  thumbnailUrl?: string;
-  duration?: number;
-  progress?: number;
-  errorMessage?: string;
-}> {
+async function queryVeoTask(apiKey: string, taskId: string): Promise<TaskQueryResult> {
   const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/video/query?id=${taskId}`;
-
-  console.log('[API] 查询 Veo 任务状态 (统一格式)');
-  console.log('[API] URL:', url);
-
-  const response = await fetch(url, {
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/videos/${taskId}`, {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: { Accept: 'application/json' },
   });
 
-  console.log('[API] 查询响应状态:', response.status, response.statusText);
-
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    throw new Error(`Failed to query task: ${response.status}`);
+    throw new Error(extractMessage(data) || `Query Veo task failed: ${response.status}`);
   }
 
-  const rawData = await response.json();
-  console.log('[API] 查询响应原始数据:', JSON.stringify(rawData, null, 2));
-
-  return {
-    status: mapVeoStatus(rawData.status),
-    videoUrl: rawData.video_url || undefined,
-    thumbnailUrl: rawData.cover_url || undefined,
-    progress: undefined,
-    errorMessage: rawData.error?.message || undefined,
-  };
+  return parseTaskQueryResult(data);
 }
 
-// 统一查询入口：根据 taskId 前缀判断格式
-export async function queryVeoTaskAuto(
-  apiKey: string,
-  taskId: string,
-  model?: VeoSubModel
-): Promise<{
-  status: TaskStatus;
-  videoUrl?: string;
-  thumbnailUrl?: string;
-  duration?: number;
-  progress?: number;
-  errorMessage?: string;
-}> {
-  // 如果提供了 model 参数，直接根据模型判断
-  if (model && isUnifiedFormat(model)) {
-    return queryVeoTaskUnified(apiKey, taskId);
+async function queryVeoTaskUnified(apiKey: string, taskId: string): Promise<TaskQueryResult> {
+  const { apiBaseUrl } = getSettings();
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/video/query?id=${encodeURIComponent(taskId)}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Query unified Veo task failed: ${response.status}`);
   }
-  
-  // 否则根据 taskId 前缀判断 (统一格式的 taskId 通常包含模型名前缀如 "veo3-fast-frames:")
-  const unifiedPrefixes = ['veo2', 'veo3', 'veo3.1'];
-  const isUnified = unifiedPrefixes.some(prefix => taskId.startsWith(prefix));
-  
-  if (isUnified) {
-    return queryVeoTaskUnified(apiKey, taskId);
-  } else {
-    return queryVeoTask(apiKey, taskId, model);
-  }
+
+  return parseTaskQueryResult(data);
 }
 
-// Create Sora video generation task
+async function queryVeoTaskAuto(apiKey: string, taskId: string, model?: VeoSubModel): Promise<TaskQueryResult> {
+  if (model && isUnifiedVeoModel(model)) {
+    return queryVeoTaskUnified(apiKey, taskId);
+  }
+
+  if (taskId.startsWith('veo3')) {
+    return queryVeoTaskUnified(apiKey, taskId);
+  }
+
+  return queryVeoTask(apiKey, taskId);
+}
+
 export async function createSoraVideo(
   apiKey: string,
   prompt: string,
   subModel: string = 'sora-2-all',
-  _options: Omit<SoraOptions, 'subModel'> = {}
+  options: Omit<SoraOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
-  // 使用 Veo 相同的视频创建端点
   const { apiBaseUrl } = getSettings();
   const url = `${apiBaseUrl}/videos`;
-
   const formData = new FormData();
   formData.append('model', subModel);
   formData.append('prompt', prompt);
-  formData.append('seconds', String(_options.duration || 10));
+  formData.append('seconds', String(options.duration || 10));
   formData.append('watermark', 'false');
+  formData.append('size', ratioToOpenAiSize(options.aspectRatio || '16:9'));
 
-  // 转换宽高比
-  const ratioMap: Record<string, string> = {
-    '16:9': '16x9',
-    '9:16': '9x16',
-    '1:1': '1x1',
-    '4:3': '4x3',
-    '3:4': '3x4',
-  };
-  formData.append('size', ratioMap[_options.aspectRatio || '16:9'] || '16x9');
-
-  console.log('[API] 调用 Sora 视频生成 API');
-  console.log('[API] URL:', url);
-  console.log('[API] 子模型:', subModel);
-  console.log('[API] 提示词:', prompt);
-  console.log('[API] 时长:', _options.duration || 10);
-  console.log('[API] 宽高比:', ratioMap[_options.aspectRatio || '16:9']);
-
-  const response = await fetch(url, {
+  const response = await authorizedFetch(apiKey, url, {
     method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: { Accept: 'application/json' },
     body: formData,
   });
 
-  console.log('[API] 响应状态:', response.status, response.statusText);
-
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    console.error('[API] 错误响应:', error);
-    throw new Error(error.message || `API error: ${response.status}`);
+    throw new Error(extractMessage(data) || `Sora create failed: ${response.status}`);
   }
 
-  const rawData = await response.json();
-  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+  const object = asObject(data);
   return {
-    taskId: rawData.id,
-    status: mapSoraStatus(rawData.status),
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
   };
 }
 
-// Create Sora video with image input
 export async function createSoraVideoWithImage(
   apiKey: string,
   prompt: string,
   imageData: string,
   subModel: string = 'sora-2-all',
-  _options: Omit<SoraOptions, 'subModel'> = {}
+  options: Omit<SoraOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
-  // 使用视频创建端点
   const { apiBaseUrl } = getSettings();
   const url = `${apiBaseUrl}/videos`;
-
   const formData = new FormData();
   formData.append('model', subModel);
   formData.append('prompt', prompt);
-  formData.append('seconds', String(_options.duration || 10));
+  formData.append('seconds', String(options.duration || 10));
   formData.append('watermark', 'false');
+  formData.append('size', ratioToOpenAiSize(options.aspectRatio || '16:9'));
+  formData.append('input_reference', base64ToBlob(imageData), 'reference.png');
 
-  // 转换宽高比
-  const ratioMap: Record<string, string> = {
-    '16:9': '16x9',
-    '9:16': '9x16',
-    '1:1': '1x1',
-    '4:3': '4x3',
-    '3:4': '3x4',
-  };
-  formData.append('size', ratioMap[_options.aspectRatio || '16:9'] || '16x9');
+  const response = await authorizedFetch(apiKey, url, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    body: formData,
+  });
 
-  // 将base64图片转换为Blob
-  const imageBlob = base64ToBlob(imageData);
-  formData.append('input_reference', imageBlob, 'reference.png');
-
-  console.log('[API] 调用 Sora 图片转视频 API');
-  console.log('[API] URL:', url);
-  console.log('[API] 子模型:', subModel);
-  console.log('[API] 提示词:', prompt);
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: formData,
-    });
-
-    console.log('[API] 响应状态:', response.status, response.statusText);
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      console.error('[API] 错误响应:', error);
-      throw new Error(error.message || `API error: ${response.status}`);
-    }
-
-    const rawData = await response.json();
-    console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
-    return {
-      taskId: rawData.id,
-      status: mapSoraStatus(rawData.status),
-    };
-  } catch (error) {
-    console.error('[API] 请求失败:', error);
-    throw error;
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Sora image-to-video failed: ${response.status}`);
   }
+
+  const object = asObject(data);
+  return {
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
+  };
 }
 
-// Create Grok video generation task
+async function querySoraTask(apiKey: string, taskId: string): Promise<TaskQueryResult> {
+  const { apiBaseUrl } = getSettings();
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/videos/${taskId}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Query Sora task failed: ${response.status}`);
+  }
+
+  return parseTaskQueryResult(data);
+}
+
 export async function createGrokVideo(
   apiKey: string,
   prompt: string,
@@ -488,58 +460,33 @@ export async function createGrokVideo(
   options: Omit<GrokOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
   const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/video/create`;
-
-  // Grok API 使用 JSON 格式
-  // 转换宽高比：Grok 支持 "2:3", "3:2", "1:1"
-  const ratioMap: Record<string, string> = {
-    '16:9': '3:2',  // 横向视频
-    '9:16': '2:3',  // 竖向视频
-    '1:1': '1:1',   // 方形
-  };
-
-  const requestBody = {
-    model: 'grok-video-3',
-    prompt: prompt,
-    aspect_ratio: ratioMap[options.aspectRatio || '16:9'] || '3:2',
-    size: '720P',  // 只支持 720P
-    images: [],  // 纯文本生成时为空数组
-  };
-
-  console.log('[API] 调用 Grok 视频生成 API');
-  console.log('[API] URL:', url);
-  console.log('[API] 模型:', requestBody.model);
-  console.log('[API] 请求体:', JSON.stringify(requestBody, null, 2));
-
-  const response = await fetch(url, {
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/video/create`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Accept: 'application/json',
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify({
+      model: 'grok-video-3',
+      prompt,
+      aspect_ratio: options.aspectRatio === '9:16' ? '2:3' : options.aspectRatio === '1:1' ? '1:1' : '3:2',
+      size: '720P',
+      images: [],
+    }),
   });
 
-  console.log('[API] 响应状态:', response.status, response.statusText);
-
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    console.error('[API] 错误响应:', error);
-    throw new Error(error.message || `API error: ${response.status}`);
+    throw new Error(extractMessage(data) || `Grok create failed: ${response.status}`);
   }
 
-  const rawData = await response.json();
-  console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
+  const object = asObject(data);
   return {
-    taskId: rawData.id,
-    status: mapGrokStatus(rawData.status),
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
   };
 }
 
-// Create Grok video with image input
-// NOTE: Grok API 目前只支持图片 URL，不支持 base64 直接上传
-// 如果需要图片转视频功能，需要先将图片上传到可访问的 URL
 export async function createGrokVideoWithImage(
   _apiKey: string,
   _prompt: string,
@@ -547,103 +494,24 @@ export async function createGrokVideoWithImage(
   _subModel: string = 'grok-video-3',
   _options: Omit<GrokOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
-  console.error('[API] Grok 图片转视频需要图片 URL，当前不支持 base64 上传');
-  throw new Error('Grok 图片转视频暂未支持，请先使用文字生成');
+  throw new Error('Grok 图生视频当前不可用，请改用 Veo 或 Sora');
 }
 
-// Query Grok task status
-export async function queryGrokTask(
-  apiKey: string,
-  taskId: string,
-  _model: string = 'grok-video-3-10s'
-): Promise<{
-  status: TaskStatus;
-  videoUrl?: string;
-  thumbnailUrl?: string;
-  progress?: number;
-  errorMessage?: string;
-}> {
+async function queryGrokTask(apiKey: string, taskId: string): Promise<TaskQueryResult> {
   const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/video/query?id=${taskId}`;
-
-  console.log('[API] 查询 Grok 任务状态');
-  console.log('[API] URL:', url);
-
-  const response = await fetch(url, {
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/video/query?id=${encodeURIComponent(taskId)}`, {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: { Accept: 'application/json' },
   });
 
-  console.log('[API] 查询响应状态:', response.status, response.statusText);
-
+  const data = await parseJsonSafe(response);
   if (!response.ok) {
-    throw new Error(`Failed to query task: ${response.status}`);
+    throw new Error(extractMessage(data) || `Query Grok task failed: ${response.status}`);
   }
 
-  const rawData = await response.json();
-  console.log('[API] 查询响应原始数据:', JSON.stringify(rawData, null, 2));
-
-  return {
-    status: mapGrokStatus(rawData.status),
-    videoUrl: rawData.video_url || undefined,
-    thumbnailUrl: rawData.cover_url || undefined,
-    progress: undefined,
-    errorMessage: rawData.error?.message || undefined,
-  };
+  return parseTaskQueryResult(data);
 }
 
-// Query Sora task status
-export async function querySoraTask(
-  apiKey: string,
-  taskId: string,
-  _model: string = 'sora-2'
-): Promise<{
-  status: TaskStatus;
-  videoUrl?: string;
-  thumbnailUrl?: string;
-  progress?: number;
-  errorMessage?: string;
-}> {
-  // 使用统一查询端点
-  const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/video/query?id=${taskId}`;
-
-  console.log('[API] 查询 Sora 任务状态');
-  console.log('[API] URL:', url);
-
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-  });
-
-  console.log('[API] 查询响应状态:', response.status, response.statusText);
-
-  if (!response.ok) {
-    throw new Error(`Failed to query task: ${response.status}`);
-  }
-
-  const rawData = await response.json();
-  console.log('[API] 查询响应原始数据:', JSON.stringify(rawData, null, 2));
-
-  // API直接返回 { id, status, video_url, enhanced_prompt, status_update_time }
-  return {
-    status: mapSoraStatus(rawData.status),
-    videoUrl: rawData.video_url || undefined,
-    thumbnailUrl: undefined, // Sora API doesn't return cover_url in query response
-    progress: undefined,
-    errorMessage: rawData.error?.message || undefined,
-  };
-}
-
-// Poll task status until completion
 export async function pollTaskStatus(
   apiKey: string,
   model: VideoModel,
@@ -656,54 +524,40 @@ export async function pollTaskStatus(
   thumbnailUrl?: string;
   errorMessage?: string;
   progress?: number;
-  duration?: number;
 }> {
   let attempts = 0;
-  let currentInterval = POLLING_CONFIG.interval;
+  let interval = POLLING_CONFIG.interval;
 
   while (attempts < POLLING_CONFIG.maxAttempts) {
-    try {
-      const result =
-        model === 'veo'
-          ? await queryVeoTaskAuto(apiKey, taskId, apiModel as VeoSubModel)
-          : model === 'grok'
-            ? await queryGrokTask(apiKey, taskId, apiModel || 'grok-video-3-10s')
-            : await querySoraTask(apiKey, taskId, apiModel || 'sora-2');
+    const result = model === 'veo'
+      ? await queryVeoTaskAuto(apiKey, taskId, apiModel as VeoSubModel | undefined)
+      : model === 'grok'
+        ? await queryGrokTask(apiKey, taskId)
+        : await querySoraTask(apiKey, taskId);
 
-      // 使用 API 返回的真实进度，如果没有则用计算值
-      const progress = result.progress !== undefined ? result.progress : (attempts / POLLING_CONFIG.maxAttempts) * 100;
-      onProgress?.(result.status, progress);
+    const progress = result.progress ?? Math.min(95, Math.round((attempts / POLLING_CONFIG.maxAttempts) * 100));
+    onProgress?.(result.status, progress);
 
-      if (result.status === 'completed') {
-        return {
-          status: result.status,
-          videoUrl: result.videoUrl,
-          thumbnailUrl: result.thumbnailUrl,
-          progress: 100,
-          ...(result as any).duration && { duration: (result as any).duration },
-        };
-      }
-
-      if (result.status === 'failed') {
-        return {
-          status: 'failed',
-          errorMessage: result.errorMessage || 'Video generation failed',
-          progress: result.progress,
-        };
-      }
-
-      // Exponential backoff
-      await sleep(currentInterval);
-      currentInterval *= POLLING_CONFIG.backoffMultiplier;
-      attempts++;
-    } catch (error) {
-      console.error('[API] 轮询错误:', error);
-      if (attempts >= POLLING_CONFIG.maxAttempts - 1) {
-        throw error;
-      }
-      await sleep(currentInterval);
-      attempts++;
+    if (result.status === 'completed') {
+      return {
+        status: 'completed',
+        videoUrl: result.videoUrl,
+        thumbnailUrl: result.thumbnailUrl,
+        progress: 100,
+      };
     }
+
+    if (result.status === 'failed') {
+      return {
+        status: 'failed',
+        errorMessage: result.errorMessage || 'Video generation failed',
+        progress,
+      };
+    }
+
+    await sleep(interval);
+    interval *= POLLING_CONFIG.backoffMultiplier;
+    attempts += 1;
   }
 
   return {
@@ -712,197 +566,151 @@ export async function pollTaskStatus(
   };
 }
 
-// Helper functions
-function mapVeoStatus(status: string): TaskStatus {
-  const statusMap: Record<string, TaskStatus> = {
-    pending: 'pending',
-    processing: 'processing',
-    succeeded: 'completed',
-    completed: 'completed',
-    failed: 'failed',
-    cancelled: 'failed',
-    SUBMITTED: 'pending',
-    QUEUED: 'pending',
-    PROCESSING: 'processing',
-    COMPLETED: 'completed',
-    FAILED: 'failed',
-  };
-  return statusMap[status] || 'pending';
-}
-
-function mapSoraStatus(status: string): TaskStatus {
-  const statusMap: Record<string, TaskStatus> = {
-    pending: 'pending',
-    processing: 'processing',
-    succeeded: 'completed',
-    completed: 'completed',
-    failed: 'failed',
-    cancelled: 'failed',
-    SUBMITTED: 'pending',
-    QUEUED: 'pending',
-    PROCESSING: 'processing',
-    COMPLETED: 'completed',
-    FAILED: 'failed',
-  };
-  return statusMap[status] || 'pending';
-}
-
-function mapGrokStatus(status: string): TaskStatus {
-  const statusMap: Record<string, TaskStatus> = {
-    pending: 'pending',
-    processing: 'processing',
-    succeeded: 'completed',
-    completed: 'completed',
-    failed: 'failed',
-    cancelled: 'failed',
-    SUBMITTED: 'pending',
-    QUEUED: 'pending',
-    PROCESSING: 'processing',
-    COMPLETED: 'completed',
-    FAILED: 'failed',
-  };
-  return statusMap[status] || 'pending';
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Optimize prompt using OpenAI chat
 export async function optimizePrompt(
   apiKey: string,
   prompt: string,
-  model: string = 'gpt-4o-mini'
+  model: string = 'deepseek-v4-flash'
 ): Promise<string> {
   const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/chat/completions`;
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: '你是专业的视频提示词优化助手。请把用户的中文描述改写成更具体、更适合生成视频的提示词，只返回优化后的提示词。',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
+    }),
+  });
 
-  const requestBody = {
-    model,
-    messages: [
-      {
-        role: 'system',
-        content: '你是一个专业的视频生成提示词优化专家。你的任务是将用户简单的中文描述转换为详细、生动、专业的视频生成提示词。请遵循以下原则：\n1. 保留核心主题和元素\n2. 增加细节描述（颜色、光线、氛围、动作等）\n3. 优化画面构图和镜头语言\n4. 确保提示词适合AI视频生成模型理解\n5. 只返回优化后的提示词，不要任何解释或额外内容'
-      },
-      {
-        role: 'user',
-        content: `请优化这个视频生成提示词：${prompt}`
-      }
-    ],
-    temperature: 0.7,
-    max_tokens: 500,
-  };
-
-  console.log('[API] 调用 OpenAI 聊天接口优化提示词');
-  console.log('[API] URL:', url);
-  console.log('[API] 原始提示词:', prompt);
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    console.log('[API] 响应状态:', response.status, response.statusText);
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      console.error('[API] 错误响应:', error);
-      throw new Error(error.message || `API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log('[API] 成功响应:', JSON.stringify(data, null, 2));
-
-    const optimizedPrompt = data.choices?.[0]?.message?.content || prompt;
-    console.log('[API] 优化后的提示词:', optimizedPrompt);
-
-    return optimizedPrompt;
-  } catch (error) {
-    console.error('[API] 提示词优化失败:', error);
-    throw error;
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Prompt optimize failed: ${response.status}`);
   }
+
+  const object = asObject(data);
+  const choices = asArray(object.choices);
+  const firstChoice = asObject(choices[0]);
+  const message = asObject(firstChoice.message);
+  return readString(message, 'content') || prompt;
 }
 
-// Batch optimize prompts - generate 5 variations
 export async function batchOptimizePrompts(
   apiKey: string,
   prompt: string,
-  model: string = 'gpt-4o-mini'
+  count: number = 5,
+  model: string = 'deepseek-v4-flash'
 ): Promise<string[]> {
   const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}/chat/completions`;
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: `你是专业的视觉提示词助手。请基于用户给出的主题，输出 ${count} 条不同场景、不同构图或不同机位的中文提示词，用 --- 分隔。`,
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.9,
+      max_tokens: 2000,
+    }),
+  });
 
-  const requestBody = {
-    model,
-    messages: [
-      {
-        role: 'system',
-        content: '你是一个专业的AI绘画提示词优化专家。用户的请求是同一个场景的批量生成，需要你生成5个不同角度/构图/风格的变体提示词。\n\n要求：\n1. 保持核心主题一致\n2. 每个变体在以下方面有所不同：\n   - 构图角度（特写/中景/远景）\n   - 光线氛围（清晨/黄昏/阴天/晴天）\n   - 艺术风格（写实/油画/水彩/赛博朋克等）\n   - 色彩调性（暖色/冷色/黑白/高饱和等）\n   - 情绪氛围（宁静/激烈/神秘/温馨等）\n3. 每个提示词详细且完整\n4. 用中文输出\n5. 直接返回5个提示词，用 "---" 分隔，不要有其他内容'
-      },
-      {
-        role: 'user',
-        content: `请为以下场景生成5个不同版本的绘画提示词：${prompt}`
-      }
-    ],
-    temperature: 0.9,
-    max_tokens: 2000,
-  };
-
-  console.log('[API] 调用批量提示词优化');
-  console.log('[API] 原始提示词:', prompt);
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      throw new Error(error.message || `API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || prompt;
-    
-    // 解析返回的内容，用 "---" 分隔
-    const prompts = content.split('---').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
-    
-    // 如果解析不到5个，就返回原始提示词的5个副本
-    if (prompts.length < 2) {
-      // 尝试用换行符分隔
-      const lines = content.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 10);
-      if (lines.length >= 2) {
-        return lines.slice(0, 5);
-      }
-      // 如果还是不够，返回优化后的提示词和原始提示词的组合
-      return [content, prompt, prompt, prompt, prompt].slice(0, 5);
-    }
-    
-    return prompts.slice(0, 5);
-  } catch (error) {
-    console.error('[API] 批量提示词优化失败:', error);
-    // 失败时返回原始提示词的5个副本
-    return [prompt, prompt, prompt, prompt, prompt];
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Batch prompt optimize failed: ${response.status}`);
   }
+
+  const object = asObject(data);
+  const choices = asArray(object.choices);
+  const firstChoice = asObject(choices[0]);
+  const message = asObject(firstChoice.message);
+  const content = readString(message, 'content') || prompt;
+  const prompts = content
+    .split('---')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  if (prompts.length >= 2) {
+    return prompts.slice(0, count);
+  }
+
+  return Array.from({ length: count }, () => prompt);
 }
 
-// Create Gemini image generation task
-export async function createGeminiImage(
+function parseImageResponse(rawData: unknown): { taskId: string; status: TaskStatus; imageUrl?: string } {
+  const object = asObject(rawData);
+  let imageUrl: string | undefined;
+
+  const data = asArray(object.data);
+  if (data.length > 0) {
+    imageUrl = readString(asObject(data[0]), 'url');
+  }
+
+  if (!imageUrl) {
+    const choices = asArray(object.choices);
+    const firstChoice = asObject(choices[0]);
+    const message = asObject(firstChoice.message);
+    const content = message.content;
+
+    if (Array.isArray(content)) {
+      for (const item of content) {
+        const block = asObject(item);
+        if (readString(block, 'type') === 'image_url') {
+          const imageUrlObject = asObject(block.image_url);
+          const candidate = readString(imageUrlObject, 'url');
+          if (candidate) {
+            imageUrl = candidate;
+            break;
+          }
+        }
+      }
+    } else if (typeof content === 'string') {
+      if (content.startsWith('data:image') || content.startsWith('http')) {
+        imageUrl = content;
+      } else {
+        const markdownMatch = content.match(/!\[.*?\]\(([^)]+)\)/);
+        imageUrl = markdownMatch?.[1];
+      }
+    }
+  }
+
+  if (!imageUrl) {
+    imageUrl = readString(object, 'image_url') || readString(object, 'url');
+  }
+
+  return {
+    taskId: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+    status: 'completed',
+    imageUrl,
+  };
+}
+
+export async function createImage2Image(
   apiKey: string,
   prompt: string,
-  subModel: string = 'gemini-3.1-flash-image-preview',
+  subModel: string = 'image2',
   options: {
     aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
     resolution?: '720P' | '1080P' | '2K' | '4K';
@@ -911,289 +719,106 @@ export async function createGeminiImage(
   referenceImageData?: string | string[]
 ): Promise<{ taskId: string; status: TaskStatus; imageUrl?: string }> {
   const { apiBaseUrl } = getSettings();
-
-  // 根据宽高比和分辨率计算正确的尺寸
-  function calculateDimensions(
-    res: '720P' | '1080P' | '2K' | '4K',
-    ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
-  ): { width: number; height: number } {
-    const longEdgeMap: Record<'720P' | '1080P' | '2K' | '4K', number> = {
-      '720P': 1280,
-      '1080P': 1920,
-      '2K': 2048,
-      '4K': 4096,
-    };
-
-    const ratioMap: Record<'1:1' | '16:9' | '9:16' | '4:3' | '3:4', { w: number; h: number }> = {
-      '1:1': { w: 1, h: 1 },
-      '16:9': { w: 16, h: 9 },
-      '9:16': { w: 9, h: 16 },
-      '4:3': { w: 4, h: 3 },
-      '3:4': { w: 3, h: 4 },
-    };
-
-    const maxSide = longEdgeMap[res];
-    const selectedRatio = ratioMap[ratio];
-
-    if (selectedRatio.w >= selectedRatio.h) {
-      return {
-        width: maxSide,
-        height: Math.round((maxSide * selectedRatio.h) / selectedRatio.w),
-      };
-    }
-
-    return {
-      width: Math.round((maxSide * selectedRatio.w) / selectedRatio.h),
-      height: maxSide,
-    };
-  }
-
-  function buildAspectRatioPrompt(
-    basePrompt: string,
-    ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
-  ): string {
-    const ratioInstructionMap: Record<'1:1' | '16:9' | '9:16' | '4:3' | '3:4', string> = {
-      '1:1': 'Output must use a strict 1:1 square canvas. Do not return a landscape or portrait image.',
-      '16:9': 'Output must use a strict 16:9 landscape canvas.',
-      '9:16': 'Output must use a strict 9:16 portrait canvas.',
-      '4:3': 'Output must use a strict 4:3 canvas.',
-      '3:4': 'Output must use a strict 3:4 portrait canvas.',
-    };
-
-    return `${basePrompt}\n\n${ratioInstructionMap[ratio]}`;
-  }
-
   const aspectRatio = options.aspectRatio || '1:1';
   const resolution = options.resolution || '2K';
-  const { width, height } = calculateDimensions(resolution, aspectRatio);
-  const size = resolution;
-  const promptWithAspectRatio = buildAspectRatioPrompt(prompt, aspectRatio);
-
-  const normalizedReferenceImages = (
-    Array.isArray(referenceImageData) ? referenceImageData : referenceImageData ? [referenceImageData] : []
-  )
-    .filter((url): url is string => typeof url === 'string' && url.length > 0)
+  const { width, height } = calculateImageDimensions(resolution, aspectRatio);
+  const normalizedRefs = (Array.isArray(referenceImageData)
+    ? referenceImageData
+    : referenceImageData
+      ? [referenceImageData]
+      : [])
+    .filter((value): value is string => Boolean(value))
     .slice(0, 2);
 
-  if (normalizedReferenceImages.length > 0) {
-    const multimodalUrl = `${apiBaseUrl}/chat/completions`;
-    const multimodalRequestBody = {
-      model: subModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptWithAspectRatio },
-            ...normalizedReferenceImages.map((url) => ({ type: 'image_url', image_url: { url } })),
-          ],
-        },
-      ],
-      response_modalities: ['image'],
-      size: size,
-      aspect_ratio: aspectRatio,
-      width: width,
-      height: height,
-      image_size: {
-        width,
-        height,
-      },
-      negative_prompt: options.negativePrompt || '',
-      temperature: 0.7,
-    };
-
-    console.log('[API] Use multimodal image generation with reference image');
-    console.log('[API] URL:', multimodalUrl);
-    console.log('[API] Params:', {
-      size,
-      aspectRatio,
-      width,
-      height,
-      referenceImageCount: normalizedReferenceImages.length,
-    });
-    const maxRetries = 2;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const multimodalResponse = await fetch(multimodalUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(multimodalRequestBody),
-      });
-
-      if (multimodalResponse.ok) {
-        const rawData = await multimodalResponse.json();
-        return parseImageResponse(rawData);
-      }
-
-      const error = await multimodalResponse.json().catch(() => ({ message: multimodalResponse.statusText }));
-      console.error('[API] Multimodal image generation failed:', error);
-
-      // Retry on rate limit with incremental backoff: 1.5s, 3s
-      if (multimodalResponse.status === 429 && attempt < maxRetries) {
-        await sleep(1500 * (attempt + 1));
-        continue;
-      }
-
-      if (multimodalResponse.status === 429) {
-        throw new Error('API 限流或额度不足（429），请稍后重试或更换可用 Key');
-      }
-
-      throw new Error(error.message || `API error: ${multimodalResponse.status}`);
-    }
-  }
-
-  // 尝试使用专门的图像生成 API (/images/generations)
-  const url = `${apiBaseUrl}/images/generations`;
-  const requestBody = {
-    model: subModel,
-    prompt: promptWithAspectRatio,
-    size: size,
-    aspect_ratio: aspectRatio,
-    width: width,
-    height: height,
-    image_size: {
-      width,
-      height,
-    },
-    n: 1,
-  };
-
-  // 如果 API 支持 aspect_ratio 参数
-  console.log('[API] 尝试使用 /images/generations 端点');
-  console.log('[API] URL:', url);
-  console.log('[API] 模型:', subModel);
-  console.log('[API] 提示词:', prompt);
-  console.log('[API] 参数:', { size, aspectRatio });
-  console.log('[API] 请求体:', JSON.stringify(requestBody, null, 2));
-
-  try {
-    const response = await fetch(url, {
+  if (normalizedRefs.length > 0) {
+    const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Accept: 'application/json',
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({
+        model: subModel,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              ...normalizedRefs.map((url) => ({ type: 'image_url', image_url: { url } })),
+            ],
+          },
+        ],
+        response_modalities: ['image'],
+        aspect_ratio: aspectRatio,
+        width,
+        height,
+        image_size: { width, height },
+        negative_prompt: options.negativePrompt || '',
+      }),
     });
 
-    console.log('[API] 响应状态:', response.status, response.statusText);
-
-    // 如果 /images/generations 失败，回退到 /chat/completions
+    const data = await parseJsonSafe(response);
     if (!response.ok) {
-      console.log(`[API] /images/generations 返回 ${response.status}，回退到 /chat/completions`);
-
-      const fallbackUrl = `${apiBaseUrl}/chat/completions`;
-      const fallbackRequestBody = {
-        model: subModel,
-        messages: [{ role: 'user', content: promptWithAspectRatio }],
-        response_modalities: ['image'],
-        size: size,
-        aspect_ratio: aspectRatio,
-        width: width,
-        height: height,
-        image_size: {
-          width,
-          height,
-        },
-        negative_prompt: options.negativePrompt || '',
-        temperature: 0.7,
-      };
-
-      console.log('[API] Fallback 请求体:', JSON.stringify(fallbackRequestBody, null, 2));
-
-      const fallbackResponse = await fetch(fallbackUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(fallbackRequestBody),
-      });
-
-      if (!fallbackResponse.ok) {
-        const error = await fallbackResponse.json().catch(() => ({ message: fallbackResponse.statusText }));
-        console.error('[API] Fallback 也失败:', error);
-        throw new Error(error.message || `API error: ${fallbackResponse.status}`);
-      }
-
-      const rawData = await fallbackResponse.json();
-      console.log('[API] Fallback 响应成功');
-      return parseImageResponse(rawData);
+      throw new Error(extractMessage(data) || `Image2 generation failed: ${response.status}`);
     }
 
-    const rawData = await response.json();
-    console.log('[API] 成功响应原始数据:', JSON.stringify(rawData, null, 2));
-    return parseImageResponse(rawData);
-
-  } catch (error) {
-    console.error('[API] 图像生成失败:', error);
-    throw error;
-  }
-}
-
-// 解析图片响应
-function parseImageResponse(rawData: any): { taskId: string; status: TaskStatus; imageUrl?: string } {
-  let imageUrl = null;
-
-  // 检查 /images/generations 标准格式 (data 数组)
-  if (rawData.data && Array.isArray(rawData.data) && rawData.data[0]?.url) {
-    imageUrl = rawData.data[0].url;
-  }
-  // 检查 /chat/completions 格式
-  else {
-    const content = rawData.choices?.[0]?.message?.content;
-
-    if (Array.isArray(content)) {
-      for (const item of content) {
-        if (item.type === 'image_url' && item.image_url?.url) {
-          imageUrl = item.image_url.url;
-          break;
-        }
-      }
-    } else if (content && typeof content === 'string') {
-      if (content.startsWith('data:image') || content.startsWith('http')) {
-        imageUrl = content;
-      } else if (content.includes('![') && content.includes('](')) {
-        const match = content.match(/!\[.*?\]\(([^)]+)\)/);
-        if (match && match[1]) {
-          imageUrl = match[1];
-        }
-      }
-    }
-
-    if (!imageUrl) {
-      imageUrl = rawData.image_url || rawData.url;
-    }
+    return parseImageResponse(data);
   }
 
-  console.log('[API] 解析后的图片 URL:', imageUrl ? imageUrl.substring(0, 100) + '...' : 'null');
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/images/generations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model: subModel,
+      prompt,
+      n: 1,
+      aspect_ratio: aspectRatio,
+      width,
+      height,
+      image_size: { width, height },
+    }),
+  });
 
-  const taskId = generateId();
-  return {
-    taskId,
-    status: 'completed' as TaskStatus,
-    imageUrl,
-  };
+  const data = await parseJsonSafe(response);
+  if (response.ok) {
+    return parseImageResponse(data);
+  }
+
+  const fallbackResponse = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model: subModel,
+      messages: [{ role: 'user', content: prompt }],
+      response_modalities: ['image'],
+      aspect_ratio: aspectRatio,
+      width,
+      height,
+      image_size: { width, height },
+      negative_prompt: options.negativePrompt || '',
+    }),
+  });
+
+  const fallbackData = await parseJsonSafe(fallbackResponse);
+  if (!fallbackResponse.ok) {
+    throw new Error(extractMessage(fallbackData) || `Image2 fallback failed: ${fallbackResponse.status}`);
+  }
+
+  return parseImageResponse(fallbackData);
 }
 
-// Generate unique ID for image tasks
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-// Validate API key
 export async function validateApiKey(apiKey: string): Promise<boolean> {
   try {
     const { apiBaseUrl } = getSettings();
-    const response = await fetch(`${apiBaseUrl}/video/create?limit=1`, {
+    const response = await authorizedFetch(apiKey, `${apiBaseUrl}/models`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-      },
+      headers: { Accept: 'application/json' },
     });
     return response.status !== 401;
   } catch {
