@@ -46,6 +46,8 @@ import {
 } from './services/storage';
 import { generateId } from './utils/constants';
 import {
+  deleteImageData,
+  pruneStoredImages,
   releaseImageUrl,
   resolveImageDataUrl,
   resolveImageUrl,
@@ -166,6 +168,10 @@ function App() {
     setTasksToStorage(tasks);
   }, [tasks]);
 
+  useEffect(() => {
+    void pruneStoredImages();
+  }, []);
+
   const handleGenerationTypeChange = useCallback((type: GenerationType) => {
     setGenerationType(type);
 
@@ -221,7 +227,14 @@ function App() {
   }, []);
 
   const handleDeleteTask = useCallback((taskId: string) => {
-    setTasks((prev) => prev.filter((task) => task.id !== taskId));
+    setTasks((prev) => {
+      const taskToDelete = prev.find((task) => task.id === taskId);
+      if (taskToDelete?.videoUrl) {
+        void deleteImageData(taskToDelete.videoUrl);
+      }
+
+      return prev.filter((task) => task.id !== taskId);
+    });
     setSelectedTask((prev) => (prev?.id === taskId ? null : prev));
   }, []);
 

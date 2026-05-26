@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { HistoryRecord } from '../types';
 import { clearHistory, deleteHistory, getHistory } from '../services/storage';
-import { releaseImageUrl, resolveImageUrl } from '../services/mediaStore';
+import { deleteImageData, releaseImageUrl, resolveImageUrl } from '../services/mediaStore';
 import { formatDate } from '../utils/constants';
 import { VideoPlayer } from './VideoPlayer';
 
@@ -222,6 +222,11 @@ export function VideoHistory({ onPromptSelect }: VideoHistoryProps) {
   };
 
   const handleDelete = (id: string) => {
+    const recordToDelete = records.find((record) => record.id === id);
+    if (recordToDelete?.videoUrl) {
+      void deleteImageData(recordToDelete.videoUrl);
+    }
+
     deleteHistory(id);
     setRecords(getHistory());
     if (selectedRecord?.id === id) {
@@ -230,6 +235,12 @@ export function VideoHistory({ onPromptSelect }: VideoHistoryProps) {
   };
 
   const handleClearAll = () => {
+    records.forEach((record) => {
+      if (record.videoUrl) {
+        void deleteImageData(record.videoUrl);
+      }
+    });
+
     clearHistory();
     setRecords([]);
     setSelectedRecord(null);

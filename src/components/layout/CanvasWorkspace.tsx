@@ -97,9 +97,9 @@ export function CanvasWorkspace({
 
         {tasks.length === 0 && (
           <div className="absolute left-[50vw] top-[30vh] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center opacity-30 select-none pointer-events-none">
-            <div className="text-8xl mb-6">视</div>
+            <div className="text-8xl mb-6">🎬</div>
             <h2 className="text-3xl font-bold text-gray-400">开始你的创作</h2>
-            <p className="text-lg text-gray-400 mt-2">在下方输入提示词，任务节点会出现在画布中</p>
+            <p className="text-lg text-gray-400 mt-2">在下方输入提示词，生成的任务卡片会出现在画布中</p>
           </div>
         )}
       </div>
