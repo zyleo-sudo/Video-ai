@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { VideoTask } from '../../types';
 import { STATUS_COLORS } from '../../utils/constants';
 import { releaseImageUrl, resolveImageUrl } from '../../services/mediaStore';
@@ -8,6 +8,7 @@ interface VideoNodeProps {
   onClick: () => void;
   onDrag: (x: number, y: number) => void;
   onRemove: (taskId: string) => void;
+  onUseAsImageSource?: (task: VideoTask) => void;
   onUseAsVideoSource?: (task: VideoTask) => void;
   onUseBatchAsVideoSource?: (task: VideoTask) => void;
 }
@@ -17,6 +18,7 @@ export function VideoNode({
   onClick,
   onDrag,
   onRemove,
+  onUseAsImageSource,
   onUseAsVideoSource,
   onUseBatchAsVideoSource,
 }: VideoNodeProps) {
@@ -92,6 +94,14 @@ export function VideoNode({
   }, [dragStart, isDragging, onDrag]);
 
   const handleMouseDown = (event: React.MouseEvent) => {
+    const target = event.target as HTMLElement;
+    if (
+      event.button !== 0
+      || target.closest('button, a, input, textarea, select, video, img, [data-no-drag="true"]')
+    ) {
+      return;
+    }
+
     event.stopPropagation();
     setIsDragging(true);
     setDragStart({ x: event.clientX - pos.x, y: event.clientY - pos.y });
@@ -232,7 +242,7 @@ export function VideoNode({
                 ) : task.status === 'failed' ? (
                   <div className="flex flex-col items-center">
                     <span className="text-2xl mb-1">!</span>
-                    <span className="text-[10px] text-red-400 font-bold uppercase text-center px-4">Generation Failed</span>
+                    <span className="text-[10px] text-red-400 font-bold text-center px-4">生成失败</span>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center">
@@ -257,6 +267,17 @@ export function VideoNode({
               {new Date(task.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             <div className="flex items-center gap-2">
+              {isImageTask && task.status === 'completed' && onUseAsImageSource && (
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onUseAsImageSource(task);
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+                >
+                  继续生图
+                </button>
+              )}
               {isImageTask && task.status === 'completed' && task.batchId && onUseBatchAsVideoSource && (
                 <button
                   onClick={(event) => {
@@ -312,3 +333,4 @@ export function VideoNode({
     </>
   );
 }
+

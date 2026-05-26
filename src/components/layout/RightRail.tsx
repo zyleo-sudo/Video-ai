@@ -1,15 +1,72 @@
 import { useEffect, useMemo, useState } from 'react';
-import { HistoryRecord, VideoTask } from '../../types';
 import { getHistory } from '../../services/storage';
 import { releaseImageUrl, resolveImageUrl } from '../../services/mediaStore';
+import { HistoryRecord, VideoTask } from '../../types';
 
 interface RightRailProps {
   selectedTask: VideoTask | null;
   tasks: VideoTask[];
   onTaskClick: (task: VideoTask) => void;
   onPromptSelect: (prompt: string) => void;
+  onUseAsImageSource?: (task: VideoTask) => void;
   onUseAsVideoSource?: (task: VideoTask) => void;
   onUseBatchAsVideoSource?: (task: VideoTask) => void;
+}
+
+interface MediaThumbProps {
+  item: Pick<VideoTask, 'generationType' | 'prompt' | 'thumbnailUrl' | 'videoUrl'>;
+  className?: string;
+  autoPlay?: boolean;
+}
+
+function useResolvedMedia(url?: string): string {
+  const [resolvedUrl, setResolvedUrl] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    let currentUrl = '';
+
+    async function loadUrl(): Promise<void> {
+      const nextUrl = await resolveImageUrl(url);
+      if (!active) {
+        releaseImageUrl(nextUrl);
+        return;
+      }
+
+      currentUrl = nextUrl;
+      setResolvedUrl(nextUrl);
+    }
+
+    setResolvedUrl('');
+    void loadUrl();
+
+    return () => {
+      active = false;
+      releaseImageUrl(currentUrl);
+    };
+  }, [url]);
+
+  return resolvedUrl || url || '';
+}
+
+function MediaThumb({ item, className = '', autoPlay = false }: MediaThumbProps) {
+  const imageUrl = useResolvedMedia(item.thumbnailUrl || item.videoUrl);
+  const videoUrl = useResolvedMedia(item.videoUrl);
+
+  if (item.generationType === 'image') {
+    return <img src={imageUrl} className={className} alt={item.prompt} />;
+  }
+
+  return (
+    <video
+      src={videoUrl}
+      className={className}
+      muted
+      loop
+      autoPlay={autoPlay}
+      playsInline
+    />
+  );
 }
 
 export function RightRail({
@@ -17,6 +74,7 @@ export function RightRail({
   tasks,
   onTaskClick,
   onPromptSelect,
+  onUseAsImageSource,
   onUseAsVideoSource,
   onUseBatchAsVideoSource,
 }: RightRailProps) {
@@ -32,7 +90,10 @@ export function RightRail({
     return tasks.filter((task) => task.batchId === selectedTask.batchId && task.generationType === 'image');
   }, [selectedTask, tasks]);
 
-  const completedBatchItems = useMemo(() => batchItems.filter((task) => task.status === 'completed'), [batchItems]);
+  const completedBatchItems = useMemo(
+    () => batchItems.filter((task) => task.status === 'completed'),
+    [batchItems]
+  );
 
   useEffect(() => {
     let active = true;
@@ -54,6 +115,7 @@ export function RightRail({
       setSelectedTaskMediaUrl(resolvedUrl);
     }
 
+    setSelectedTaskMediaUrl('');
     void loadSelectedTaskMedia();
 
     return () => {
@@ -66,7 +128,8 @@ export function RightRail({
     <div className="fixed right-0 top-16 bottom-0 w-80 bg-white border-l border-gray-200 flex flex-col z-30 shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.05)]">
       <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
         <h3 className="font-bold text-gray-800 flex items-center gap-2 text-sm uppercase tracking-wider">
-          <span className="text-blue-500">档</span> 创作档案
+          <span className="text-blue-500">档</span>
+          创作档案
         </h3>
         <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold">
           {history.length} 条记录
@@ -86,20 +149,28 @@ export function RightRail({
                   selectedTask.generationType === 'image' ? (
                     <img src={selectedTaskMediaUrl} className="w-full h-full object-cover" alt={selectedTask.prompt} />
                   ) : (
-                    <video src={selectedTaskMediaUrl} className="w-full h-full object-cover" muted loop autoPlay />
+                    <video src={selectedTaskMediaUrl} className="w-full h-full object-cover" muted loop autoPlay playsInline />
                   )
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-500 text-2xl">视</div>
+                  <div className="w-full h-full flex items-center justify-center text-gray-500 text-2xl">预览</div>
                 )}
               </div>
               <h5 className="text-sm font-bold text-gray-800 line-clamp-1">{selectedTask.model.toUpperCase()} 任务</h5>
               <p className="text-xs text-gray-500 mt-2 leading-relaxed line-clamp-3">{selectedTask.prompt}</p>
+              {selectedTask.generationType === 'image' && selectedTask.status === 'completed' && onUseAsImageSource && (
+                <button
+                  onClick={() => onUseAsImageSource(selectedTask)}
+                  className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-colors"
+                >
+                  用这张图继续生图
+                </button>
+              )}
               {selectedTask.generationType === 'image' && selectedTask.status === 'completed' && onUseAsVideoSource && (
                 <button
                   onClick={() => onUseAsVideoSource(selectedTask)}
-                  className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors"
+                  className="mt-2 w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors"
                 >
-                  用这张图继续生成视频
+                  用这张图生成视频
                 </button>
               )}
               {selectedTask.generationType === 'image' && completedBatchItems.length > 1 && onUseBatchAsVideoSource && (
@@ -107,7 +178,7 @@ export function RightRail({
                   onClick={() => onUseBatchAsVideoSource(selectedTask)}
                   className="mt-2 w-full px-4 py-2.5 text-sm font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors"
                 >
-                  一键生成这批 {completedBatchItems.length} 个视频
+                  一键生成这批 {completedBatchItems.length} 个短视频
                 </button>
               )}
             </div>
@@ -128,7 +199,7 @@ export function RightRail({
                       }`}
                     >
                       {item.videoUrl ? (
-                        <img src={item.videoUrl} className="w-full h-full object-cover" alt={item.prompt} />
+                        <MediaThumb item={item} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full bg-gray-100 flex items-center justify-center text-[10px] text-gray-400">
                           {item.status}
@@ -171,31 +242,7 @@ export function RightRail({
       </div>
 
       {previewItem && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200]" onClick={() => setPreviewItem(null)}>
-          <div
-            className="bg-gray-900 rounded-2xl overflow-hidden max-w-4xl max-h-[90vh] w-full mx-4 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-gray-800">
-              <h3 className="text-white font-semibold">
-                {previewItem.generationType === 'image' ? '图片预览' : '视频预览'}
-              </h3>
-              <button onClick={() => setPreviewItem(null)} className="text-gray-400 hover:text-white p-1">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-4">
-              {previewItem.generationType === 'image' ? (
-                <img src={previewItem.videoUrl} className="max-w-full max-h-[70vh] mx-auto rounded-lg" alt={previewItem.prompt} />
-              ) : (
-                <video src={previewItem.videoUrl} className="w-full max-h-[70vh] rounded-lg" controls autoPlay />
-              )}
-              <p className="text-gray-400 mt-4 text-sm line-clamp-2">{previewItem.prompt}</p>
-            </div>
-          </div>
-        </div>
+        <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />
       )}
     </div>
   );
@@ -236,11 +283,7 @@ function HistoryList({
               onPreview?.(item);
             }}
           >
-            {item.generationType === 'image' ? (
-              <img src={item.thumbnailUrl || item.videoUrl} className="w-full h-full object-cover" alt={item.prompt} />
-            ) : (
-              <video src={item.videoUrl} className="w-full h-full object-cover" />
-            )}
+            <MediaThumb item={item} className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[11px] font-medium text-gray-800 line-clamp-2 leading-tight mb-1">{item.prompt}</p>
@@ -264,6 +307,38 @@ function HistoryList({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function PreviewModal({ item, onClose }: { item: HistoryRecord; onClose: () => void }) {
+  const mediaUrl = useResolvedMedia(item.videoUrl);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200]" onClick={onClose}>
+      <div
+        className="bg-gray-900 rounded-2xl overflow-hidden max-w-4xl max-h-[90vh] w-full mx-4 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+          <h3 className="text-white font-semibold">
+            {item.generationType === 'image' ? '图片预览' : '视频预览'}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white p-1">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-4">
+          {item.generationType === 'image' ? (
+            <img src={mediaUrl} className="max-w-full max-h-[70vh] mx-auto rounded-lg" alt={item.prompt} />
+          ) : (
+            <video src={mediaUrl} className="w-full max-h-[70vh] rounded-lg" controls autoPlay />
+          )}
+          <p className="text-gray-400 mt-4 text-sm line-clamp-2">{item.prompt}</p>
+        </div>
+      </div>
     </div>
   );
 }

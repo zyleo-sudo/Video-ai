@@ -1,4 +1,4 @@
-import { POLLING_CONFIG } from '../utils/constants';
+﻿import { POLLING_CONFIG } from '../utils/constants';
 import { getSettings, sanitizeApiKey } from './storage';
 import {
   GrokOptions,
@@ -36,9 +36,81 @@ function readString(object: JsonObject, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-function readNumber(object: JsonObject, key: string): number | undefined {
-  const value = object[key];
-  return typeof value === 'number' ? value : undefined;
+function findFirstStringByKeys(value: unknown, keys: string[], depth: number = 0): string | undefined {
+  if (depth > 6 || value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstStringByKeys(item, keys, depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+
+  if (typeof value !== 'object') {
+    return undefined;
+  }
+
+  const object = value as JsonObject;
+  for (const key of keys) {
+    const candidate = object[key];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  for (const nestedValue of Object.values(object)) {
+    const found = findFirstStringByKeys(nestedValue, keys, depth + 1);
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
+}
+
+function findFirstNumberByKeys(value: unknown, keys: string[], depth: number = 0): number | undefined {
+  if (depth > 6 || value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstNumberByKeys(item, keys, depth + 1);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+
+  if (typeof value !== 'object') {
+    return undefined;
+  }
+
+  const object = value as JsonObject;
+  for (const key of keys) {
+    const candidate = object[key];
+    if (typeof candidate === 'number') {
+      return candidate;
+    }
+    if (typeof candidate === 'string' && candidate.trim() && !Number.isNaN(Number(candidate))) {
+      return Number(candidate);
+    }
+  }
+
+  for (const nestedValue of Object.values(object)) {
+    const found = findFirstNumberByKeys(nestedValue, keys, depth + 1);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+
+  return undefined;
 }
 
 function normalizeHeaders(headersInit?: HeadersInit): Record<string, string> {
@@ -120,6 +192,16 @@ function base64ToBlob(base64: string): Blob {
   return new Blob([buffer], { type: mime });
 }
 
+function appendImageEditField(formData: FormData, fieldName: string, imageData: string, index: number): void {
+  const extension = imageData.includes('image/jpeg')
+    ? 'jpg'
+    : imageData.includes('image/webp')
+      ? 'webp'
+      : 'png';
+
+  formData.append(fieldName, base64ToBlob(imageData), `reference-${index}.${extension}`);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -194,6 +276,14 @@ function calculateImageDimensions(
   };
 }
 
+function toGptImageSize(ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'): '1024x1024' | '1536x1024' | '1024x1536' {
+  if (ratio === '1:1') {
+    return '1024x1024';
+  }
+
+  return ratio === '16:9' || ratio === '4:3' ? '1536x1024' : '1024x1536';
+}
+
 type TaskQueryResult = {
   status: TaskStatus;
   videoUrl?: string;
@@ -204,12 +294,33 @@ type TaskQueryResult = {
 
 function parseTaskQueryResult(data: unknown): TaskQueryResult {
   const object = asObject(data);
+  const status = findFirstStringByKeys(data, ['status', 'state', 'task_status']);
+  const videoUrl = findFirstStringByKeys(data, [
+    'video_url',
+    'videoUrl',
+    'file_url',
+    'download_url',
+    'play_url',
+    'media_url',
+    'url',
+    'src',
+  ]);
+  const thumbnailUrl = findFirstStringByKeys(data, [
+    'cover_url',
+    'thumbnail_url',
+    'thumbnailUrl',
+    'poster_url',
+    'poster',
+    'cover',
+    'thumbnail',
+  ]);
+  const progress = findFirstNumberByKeys(data, ['progress', 'percentage', 'percent']);
 
   return {
-    status: mapStatus(readString(object, 'status')),
-    videoUrl: readString(object, 'video_url') || readString(object, 'url'),
-    thumbnailUrl: readString(object, 'cover_url') || readString(object, 'thumbnail_url'),
-    progress: readNumber(object, 'progress'),
+    status: mapStatus(status || readString(object, 'status')),
+    videoUrl,
+    thumbnailUrl,
+    progress,
     errorMessage: extractMessage(data),
   };
 }
@@ -300,6 +411,26 @@ export async function createVeoVideoWithImage(
   subModel: string = 'veo_3_1-fast',
   options: Omit<VeoOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
+  if (options.imageType === 'start-end' && options.imageData2) {
+    return createVeoVideoUnifiedWithImages(
+      apiKey,
+      prompt,
+      [imageData, options.imageData2],
+      subModel as VeoSubModel,
+      options
+    );
+  }
+
+  if (isUnifiedVeoImageModel(subModel)) {
+    return createVeoVideoUnifiedWithImages(
+      apiKey,
+      prompt,
+      [imageData],
+      subModel as VeoSubModel,
+      options
+    );
+  }
+
   const { apiBaseUrl } = getSettings();
   const url = `${apiBaseUrl}/videos`;
   const formData = new FormData();
@@ -319,6 +450,59 @@ export async function createVeoVideoWithImage(
   const data = await parseJsonSafe(response);
   if (!response.ok) {
     throw new Error(extractMessage(data) || `Veo image-to-video failed: ${response.status}`);
+  }
+
+  const object = asObject(data);
+  return {
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
+  };
+}
+
+function isUnifiedVeoImageModel(model: string): boolean {
+  return [
+    ...UNIFIED_VEO_MODELS,
+    'veo_3_1',
+    'veo_3_1-fast',
+    'veo_3_1-fast-4K',
+    'veo_3_1-pro',
+    'veo_3_1-components',
+  ].includes(model as VeoSubModel | 'veo_3_1-components');
+}
+
+async function createVeoVideoUnifiedWithImages(
+  apiKey: string,
+  prompt: string,
+  images: string[],
+  subModel: VeoSubModel,
+  options: Omit<VeoOptions, 'subModel'> = {}
+): Promise<{ taskId: string; status: TaskStatus }> {
+  const { apiBaseUrl } = getSettings();
+  const url = `${apiBaseUrl}/video/create`;
+  const normalizedImages = images.filter((value) => value.trim().length > 0).slice(0, 2);
+
+  if (normalizedImages.length === 0) {
+    throw new Error('Veo 图生视频至少需要一张参考图');
+  }
+
+  const response = await authorizedFetch(apiKey, url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model: subModel,
+      prompt,
+      aspect_ratio: options.aspectRatio || '16:9',
+      enhance_prompt: true,
+      images: normalizedImages,
+    }),
+  });
+
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Veo unified image-to-video failed: ${response.status}`);
   }
 
   const object = asObject(data);
@@ -363,7 +547,7 @@ async function queryVeoTaskAuto(apiKey: string, taskId: string, model?: VeoSubMo
     return queryVeoTaskUnified(apiKey, taskId);
   }
 
-  if (taskId.startsWith('veo3')) {
+  if (taskId.startsWith('veo3') || taskId.startsWith('veo_3') || taskId.includes(':task_')) {
     return queryVeoTaskUnified(apiKey, taskId);
   }
 
@@ -569,94 +753,120 @@ export async function pollTaskStatus(
 export async function optimizePrompt(
   apiKey: string,
   prompt: string,
-  model: string = 'deepseek-v4-flash'
+  model: string = 'gpt-5.5'
 ): Promise<string> {
   const { apiBaseUrl } = getSettings();
-  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content: '你是专业的视频提示词优化助手。请把用户的中文描述改写成更具体、更适合生成视频的提示词，只返回优化后的提示词。',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 500,
-    }),
-  });
+  const candidates = [model, 'gpt-5.5'].filter((value, index, list) => list.indexOf(value) === index);
+  let lastError = '';
 
-  const data = await parseJsonSafe(response);
-  if (!response.ok) {
-    throw new Error(extractMessage(data) || `Prompt optimize failed: ${response.status}`);
+  for (const candidate of candidates) {
+    const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        model: candidate,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a prompt optimization assistant. Rewrite the user description into a more specific prompt for image or video generation. Return only the optimized prompt in Chinese.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    });
+
+    const data = await parseJsonSafe(response);
+    if (!response.ok) {
+      const message = extractMessage(data) || `Prompt optimize failed: ${response.status}`;
+      lastError = message;
+      if (message.includes('无可用渠道') || message.toLowerCase().includes('no available channel')) {
+        console.warn(`[API] Prompt optimize model ${candidate} unavailable, trying fallback.`);
+        continue;
+      }
+      throw new Error(message);
+    }
+
+    const object = asObject(data);
+    const choices = asArray(object.choices);
+    const firstChoice = asObject(choices[0]);
+    const message = asObject(firstChoice.message);
+    return readString(message, 'content') || prompt;
   }
 
-  const object = asObject(data);
-  const choices = asArray(object.choices);
-  const firstChoice = asObject(choices[0]);
-  const message = asObject(firstChoice.message);
-  return readString(message, 'content') || prompt;
+  throw new Error(lastError || 'Prompt optimize failed');
 }
 
 export async function batchOptimizePrompts(
   apiKey: string,
   prompt: string,
   count: number = 5,
-  model: string = 'deepseek-v4-flash'
+  model: string = 'gpt-5.5'
 ): Promise<string[]> {
   const { apiBaseUrl } = getSettings();
-  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content: `你是专业的视觉提示词助手。请基于用户给出的主题，输出 ${count} 条不同场景、不同构图或不同机位的中文提示词，用 --- 分隔。`,
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.9,
-      max_tokens: 2000,
-    }),
-  });
+  const candidates = [model, 'gpt-5.5'].filter((value, index, list) => list.indexOf(value) === index);
+  let lastError = '';
 
-  const data = await parseJsonSafe(response);
-  if (!response.ok) {
-    throw new Error(extractMessage(data) || `Batch prompt optimize failed: ${response.status}`);
+  for (const candidate of candidates) {
+    const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        model: candidate,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a scene variation assistant. Based on the user topic, output ${count} different Chinese prompts with different scenes, compositions, or camera angles. Separate each prompt with ---.`,
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.9,
+        max_tokens: 2000,
+      }),
+    });
+
+    const data = await parseJsonSafe(response);
+    if (!response.ok) {
+      const message = extractMessage(data) || `Batch prompt optimize failed: ${response.status}`;
+      lastError = message;
+      if (message.includes('无可用渠道') || message.toLowerCase().includes('no available channel')) {
+        console.warn(`[API] Batch optimize model ${candidate} unavailable, trying fallback.`);
+        continue;
+      }
+      throw new Error(message);
+    }
+
+    const object = asObject(data);
+    const choices = asArray(object.choices);
+    const firstChoice = asObject(choices[0]);
+    const message = asObject(firstChoice.message);
+    const content = readString(message, 'content') || prompt;
+    const prompts = content
+      .split('---')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+
+    if (prompts.length >= 2) {
+      return prompts.slice(0, count);
+    }
+
+    return Array.from({ length: count }, () => prompt);
   }
 
-  const object = asObject(data);
-  const choices = asArray(object.choices);
-  const firstChoice = asObject(choices[0]);
-  const message = asObject(firstChoice.message);
-  const content = readString(message, 'content') || prompt;
-  const prompts = content
-    .split('---')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-
-  if (prompts.length >= 2) {
-    return prompts.slice(0, count);
-  }
-
-  return Array.from({ length: count }, () => prompt);
+  throw new Error(lastError || 'Batch prompt optimize failed');
 }
 
 function parseImageResponse(rawData: unknown): { taskId: string; status: TaskStatus; imageUrl?: string } {
@@ -665,7 +875,19 @@ function parseImageResponse(rawData: unknown): { taskId: string; status: TaskSta
 
   const data = asArray(object.data);
   if (data.length > 0) {
-    imageUrl = readString(asObject(data[0]), 'url');
+    const firstItem = asObject(data[0]);
+    imageUrl = readString(firstItem, 'url');
+
+    if (!imageUrl) {
+      const base64Image = readString(firstItem, 'b64_json')
+        || readString(firstItem, 'b64')
+        || readString(firstItem, 'base64')
+        || readString(firstItem, 'image_base64');
+
+      if (base64Image) {
+        imageUrl = `data:image/png;base64,${base64Image}`;
+      }
+    }
   }
 
   if (!imageUrl) {
@@ -697,7 +919,14 @@ function parseImageResponse(rawData: unknown): { taskId: string; status: TaskSta
   }
 
   if (!imageUrl) {
-    imageUrl = readString(object, 'image_url') || readString(object, 'url');
+    imageUrl = findFirstStringByKeys(rawData, ['image_url', 'imageUrl', 'url']);
+  }
+
+  if (!imageUrl) {
+    const base64Image = findFirstStringByKeys(rawData, ['b64_json', 'b64', 'base64', 'image_base64']);
+    if (base64Image) {
+      imageUrl = `data:image/png;base64,${base64Image}`;
+    }
   }
 
   return {
@@ -710,7 +939,7 @@ function parseImageResponse(rawData: unknown): { taskId: string; status: TaskSta
 export async function createImage2Image(
   apiKey: string,
   prompt: string,
-  subModel: string = 'image2',
+  subModel: string = 'gpt-image-2',
   options: {
     aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
     resolution?: '720P' | '1080P' | '2K' | '4K';
@@ -722,6 +951,7 @@ export async function createImage2Image(
   const aspectRatio = options.aspectRatio || '1:1';
   const resolution = options.resolution || '2K';
   const { width, height } = calculateImageDimensions(resolution, aspectRatio);
+  const size = toGptImageSize(aspectRatio);
   const normalizedRefs = (Array.isArray(referenceImageData)
     ? referenceImageData
     : referenceImageData
@@ -731,35 +961,24 @@ export async function createImage2Image(
     .slice(0, 2);
 
   if (normalizedRefs.length > 0) {
-    const response = await authorizedFetch(apiKey, `${apiBaseUrl}/chat/completions`, {
+    const formData = new FormData();
+    formData.append('model', subModel);
+    formData.append('prompt', prompt);
+    normalizedRefs.forEach((imageData, index) => {
+      appendImageEditField(formData, 'image', imageData, index + 1);
+    });
+
+    const response = await authorizedFetch(apiKey, `${apiBaseUrl}/images/edits`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({
-        model: subModel,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              ...normalizedRefs.map((url) => ({ type: 'image_url', image_url: { url } })),
-            ],
-          },
-        ],
-        response_modalities: ['image'],
-        aspect_ratio: aspectRatio,
-        width,
-        height,
-        image_size: { width, height },
-        negative_prompt: options.negativePrompt || '',
-      }),
+      body: formData,
     });
 
     const data = await parseJsonSafe(response);
     if (!response.ok) {
-      throw new Error(extractMessage(data) || `Image2 generation failed: ${response.status}`);
+      throw new Error(extractMessage(data) || `Image2 edit failed: ${response.status}`);
     }
 
     return parseImageResponse(data);
@@ -775,6 +994,7 @@ export async function createImage2Image(
       model: subModel,
       prompt,
       n: 1,
+      size,
       aspect_ratio: aspectRatio,
       width,
       height,

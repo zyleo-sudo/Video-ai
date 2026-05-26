@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { releaseImageUrl, resolveImageUrl } from '../services/mediaStore';
 
 interface VideoPlayerProps {
   src?: string;
@@ -6,50 +7,93 @@ interface VideoPlayerProps {
   title?: string;
   className?: string;
   onDownload?: () => void;
-  isImage?: boolean; // 标识是否为图片
+  isImage?: boolean;
 }
 
 export function VideoPlayer({ src, thumbnail, title, className = '', onDownload, isImage }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState(false);
+  const [resolvedSrc, setResolvedSrc] = useState('');
+  const [resolvedThumbnail, setResolvedThumbnail] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    let currentSrc = '';
+    let currentThumbnail = '';
+
+    async function loadMediaUrls(): Promise<void> {
+      const [nextSrc, nextThumbnail] = await Promise.all([
+        resolveImageUrl(src),
+        resolveImageUrl(thumbnail),
+      ]);
+
+      if (!active) {
+        releaseImageUrl(nextSrc);
+        releaseImageUrl(nextThumbnail);
+        return;
+      }
+
+      currentSrc = nextSrc;
+      currentThumbnail = nextThumbnail;
+      setResolvedSrc(nextSrc);
+      setResolvedThumbnail(nextThumbnail);
+    }
+
+    setResolvedSrc('');
+    setResolvedThumbnail('');
+    void loadMediaUrls();
+
+    return () => {
+      active = false;
+      releaseImageUrl(currentSrc);
+      releaseImageUrl(currentThumbnail);
+    };
+  }, [src, thumbnail]);
+
+  useEffect(() => {
+    setError(false);
+  }, [src, thumbnail, isImage]);
+
+  useEffect(() => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    if (isPlaying) {
+      videoRef.current.play().catch(() => setIsPlaying(false));
+      return;
+    }
+
+    videoRef.current.pause();
+  }, [isPlaying]);
+
+  const displaySrc = resolvedSrc || src || '';
+  const displayThumbnail = resolvedThumbnail || thumbnail || '';
 
   const handleError = () => {
     setError(true);
     setIsPlaying(false);
   };
 
-  useEffect(() => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.play().catch(() => setIsPlaying(false));
-      } else {
-        videoRef.current.pause();
-      }
-    }
-  }, [isPlaying]);
-
-  // 如果是图片类型，直接渲染图片
-  if (isImage && src) {
+  if (isImage && displaySrc) {
     return (
       <div className={`relative bg-black rounded-lg overflow-hidden group ${className}`}>
         <img
           ref={imageRef}
-          src={src}
+          src={displaySrc}
           alt={title}
           className="w-full h-full object-cover"
           onError={handleError}
         />
 
-        {/* Title overlay */}
         {title && (
           <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
             <p className="text-white text-sm font-medium truncate">{title}</p>
           </div>
         )}
 
-        {/* Download button */}
         {onDownload && (
           <button
             onClick={onDownload}
@@ -65,7 +109,7 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload,
     );
   }
 
-  if (!src && !thumbnail) {
+  if (!displaySrc && !displayThumbnail) {
     return (
       <div className={`aspect-video bg-gray-100 rounded-lg flex items-center justify-center ${className}`}>
         <div className="text-center text-gray-400">
@@ -95,21 +139,20 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload,
     <div className={`relative bg-black rounded-lg overflow-hidden group ${className}`}>
       <video
         ref={videoRef}
-        src={src}
-        poster={thumbnail}
+        src={displaySrc}
+        poster={displayThumbnail}
         className="w-full h-full relative z-10"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onError={handleError}
         controls
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       />
 
-      {/* Custom overlay for thumbnail - click to open in new tab */}
-      {!src && thumbnail && (
-        <div 
+      {!displaySrc && displayThumbnail && (
+        <div
           className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
-          onClick={() => thumbnail && window.open(thumbnail, '_blank')}
+          onClick={() => window.open(displayThumbnail, '_blank')}
         >
           <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center hover:bg-white transition-colors">
             <svg className="w-8 h-8 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
@@ -119,23 +162,21 @@ export function VideoPlayer({ src, thumbnail, title, className = '', onDownload,
         </div>
       )}
 
-      {/* Title overlay */}
-      {title && src && (
+      {title && displaySrc && (
         <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
           <p className="text-white text-sm font-medium truncate">{title}</p>
         </div>
       )}
 
-      {/* Download button - always visible and on top */}
-      {src && onDownload && (
+      {displaySrc && onDownload && (
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
+          onClick={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
             onDownload();
           }}
           className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-blue-600 rounded-lg text-white z-50 pointer-events-auto shadow-lg"
-          title="下载视频"
+          title="下载媒体"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

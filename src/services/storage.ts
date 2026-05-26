@@ -1,6 +1,9 @@
 ﻿import { STORAGE_KEYS, AppSettings, HistoryRecord, DownloadItem, VideoTask } from '../types';
 import { DEFAULT_SETTINGS } from '../utils/constants';
 
+const LEGACY_ALLAPI_BASE_URL = 'https://allapi.store/v1';
+const YUNWU_BASE_URL = 'https://yunwu.ai/v1';
+
 function sanitizeTaskForStorage(task: VideoTask): VideoTask {
   const sanitizedTask = { ...task };
 
@@ -41,6 +44,30 @@ export function clearApiKey(): void {
   localStorage.removeItem(STORAGE_KEYS.API_KEY);
 }
 
+export function getOptimizeApiKey(): string {
+  return sanitizeApiKey(localStorage.getItem(STORAGE_KEYS.OPTIMIZE_API_KEY) || '');
+}
+
+export function setOptimizeApiKey(key: string): void {
+  localStorage.setItem(STORAGE_KEYS.OPTIMIZE_API_KEY, sanitizeApiKey(key));
+}
+
+export function getImageApiKey(): string {
+  return sanitizeApiKey(localStorage.getItem(STORAGE_KEYS.IMAGE_API_KEY) || '');
+}
+
+export function setImageApiKey(key: string): void {
+  localStorage.setItem(STORAGE_KEYS.IMAGE_API_KEY, sanitizeApiKey(key));
+}
+
+export function getVideoApiKey(): string {
+  return sanitizeApiKey(localStorage.getItem(STORAGE_KEYS.VIDEO_API_KEY) || '');
+}
+
+export function setVideoApiKey(key: string): void {
+  localStorage.setItem(STORAGE_KEYS.VIDEO_API_KEY, sanitizeApiKey(key));
+}
+
 // Settings storage
 export function getSettings(): AppSettings {
   const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -63,7 +90,34 @@ export function getSettings(): AppSettings {
         parsed.defaultImageSubModel = parsed.defaultGeminiSubModel;
       }
       if (parsed.defaultImageSubModel === 'gemini-3-pro-image-preview' || parsed.defaultImageSubModel === 'gemini-3.1-flash-image-preview') {
-        parsed.defaultImageSubModel = 'image2';
+        parsed.defaultImageSubModel = 'gpt-image-2';
+      }
+      if (parsed.defaultImageSubModel === 'image2') {
+        parsed.defaultImageSubModel = 'gpt-image-2';
+      }
+      if (parsed.apiBaseUrl === LEGACY_ALLAPI_BASE_URL) {
+        parsed.apiBaseUrl = YUNWU_BASE_URL;
+      }
+      if (typeof parsed.apiKey === 'string') {
+        const normalizedLegacyKey = sanitizeApiKey(parsed.apiKey);
+        if (!parsed.optimizeApiKey) {
+          parsed.optimizeApiKey = normalizedLegacyKey;
+        }
+        if (!parsed.imageApiKey) {
+          parsed.imageApiKey = normalizedLegacyKey;
+        }
+        if (!parsed.videoApiKey) {
+          parsed.videoApiKey = normalizedLegacyKey;
+        }
+      }
+      if (typeof parsed.optimizeApiKey === 'string') {
+        parsed.optimizeApiKey = sanitizeApiKey(parsed.optimizeApiKey);
+      }
+      if (typeof parsed.imageApiKey === 'string') {
+        parsed.imageApiKey = sanitizeApiKey(parsed.imageApiKey);
+      }
+      if (typeof parsed.videoApiKey === 'string') {
+        parsed.videoApiKey = sanitizeApiKey(parsed.videoApiKey);
       }
 
       return { ...DEFAULT_SETTINGS, ...parsed };
@@ -188,11 +242,22 @@ export function getTasks(): VideoTask[] {
   const stored = localStorage.getItem('videoai_tasks');
   if (stored) {
     try {
-      return JSON.parse(stored).map((t: any) => ({
+      const parsedTasks = JSON.parse(stored).map((t: any) => ({
         ...t,
         createdAt: new Date(t.createdAt),
         completedAt: t.completedAt ? new Date(t.completedAt) : undefined,
       }));
+
+      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+      const filteredTasks = parsedTasks.filter((task: VideoTask) => (
+        task.status !== 'failed' || task.createdAt.getTime() >= oneHourAgo
+      ));
+
+      if (filteredTasks.length !== parsedTasks.length) {
+        setTasks(filteredTasks);
+      }
+
+      return filteredTasks;
     } catch {
       return [];
     }

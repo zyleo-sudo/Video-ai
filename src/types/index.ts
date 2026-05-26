@@ -16,6 +16,7 @@ export type VeoSubModel =
   | 'veo_3_1-fast' 
   | 'veo_3_1-fast-4K' 
   | 'veo_3_1-pro'
+  | 'veo_3_1-components'
   // 统一格式
   | 'veo3.1-fast'
   | 'veo3.1-pro'
@@ -30,7 +31,7 @@ export type SoraSubModel = 'sora-2-all';
 export type GrokSubModel = 'grok-video-3';
 
 // Image sub-model types
-export type ImageSubModel = 'image2';
+export type ImageSubModel = 'gpt-image-2';
 
 // Generation status
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -43,6 +44,7 @@ export interface VeoOptions {
   negativePrompt?: string;
   guidanceScale?: number;
   imageType?: 'reference' | 'start-end'; // image type for image-to-video
+  imageData2?: string;
 }
 
 // Sora generation options
@@ -135,6 +137,9 @@ export interface PromptTemplate {
 // Storage keys
 export const STORAGE_KEYS = {
   API_KEY: 'videoai_api_key',
+  OPTIMIZE_API_KEY: 'videoai_optimize_api_key',
+  IMAGE_API_KEY: 'videoai_image_api_key',
+  VIDEO_API_KEY: 'videoai_video_api_key',
   HISTORY: 'videoai_history',
   DOWNLOADS: 'videoai_downloads',
   SETTINGS: 'videoai_settings',
@@ -143,6 +148,9 @@ export const STORAGE_KEYS = {
 // App settings
 export interface AppSettings {
   apiKey: string;
+  optimizeApiKey: string;
+  imageApiKey: string;
+  videoApiKey: string;
   autoDownload: boolean;
   maxConcurrentTasks: number;
   defaultGenerationType: GenerationType;

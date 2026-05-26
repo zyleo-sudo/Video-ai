@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { batchOptimizePrompts, optimizePrompt } from '../../services/allapi';
 import {
   GenerationType,
   GrokSubModel,
@@ -15,7 +16,6 @@ import {
   MODEL_CONFIGS,
   generateId,
 } from '../../utils/constants';
-import { batchOptimizePrompts, optimizePrompt } from '../../services/allapi';
 
 interface SeedImage {
   dataUrl: string;
@@ -44,6 +44,9 @@ interface GenerateData {
 
 interface BottomEditorProps {
   apiKey: string;
+  optimizeApiKey: string;
+  imageApiKey: string;
+  videoApiKey: string;
   generationType: GenerationType;
   model: VideoModel | ImageModel;
   veoSubModel: VeoSubModel;
@@ -51,7 +54,7 @@ interface BottomEditorProps {
   grokSubModel: GrokSubModel;
   imageSubModel: ImageSubModel;
   batchMode: boolean;
-  onGenerate: (data: GenerateData) => void;
+  onGenerate: (data: GenerateData) => Promise<void>;
   onGenerationTypeChange: (type: GenerationType) => void;
   initialPrompt?: string;
   onPromptUsed?: () => void;
@@ -66,6 +69,9 @@ interface BatchPrompt {
 
 export function BottomEditor({
   apiKey,
+  optimizeApiKey,
+  imageApiKey,
+  videoApiKey,
   generationType,
   model,
   veoSubModel,
@@ -94,6 +100,8 @@ export function BottomEditor({
   const [batchPrompts, setBatchPrompts] = useState<BatchPrompt[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isBatchOptimizing, setIsBatchOptimizing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
 
@@ -137,7 +145,7 @@ export function BottomEditor({
     if (generationType === 'video' && availableDurations.length > 0) {
       setDuration(availableDurations[0]);
     }
-  }, [availableDurations, generationType, model]);
+  }, [availableDurations, generationType]);
 
   const handleFileSelect = useCallback((slot: 'primary' | 'secondary') => {
     if (slot === 'primary') {
@@ -189,15 +197,15 @@ export function BottomEditor({
 
     setIsOptimizing(true);
     try {
-      const optimizedPrompt = await optimizePrompt(apiKey, prompt);
+      const optimizedPrompt = await optimizePrompt(optimizeApiKey || apiKey, prompt);
       setPrompt(optimizedPrompt);
     } catch (error) {
       console.error('[BottomEditor] Prompt optimize failed:', error);
-      alert('提示词优化失败，请检查网络或 API 密钥');
+      alert('提示词优化失败，请检查网络或 API Key');
     } finally {
       setIsOptimizing(false);
     }
-  }, [apiKey, prompt]);
+  }, [apiKey, optimizeApiKey, prompt]);
 
   const handleBatchOptimize = useCallback(async () => {
     if (!prompt.trim()) {
@@ -208,18 +216,18 @@ export function BottomEditor({
     setIsBatchOptimizing(true);
     try {
       const targetCount = batchMode ? Math.max(2, variationCount) : Math.max(2, imageCount);
-      const variations = await batchOptimizePrompts(apiKey, prompt, targetCount);
+      const variations = await batchOptimizePrompts(optimizeApiKey || apiKey, prompt, targetCount);
       setBatchPrompts((prev) => [
         ...prev,
         ...variations.map((variation) => ({ id: generateId(), prompt: variation })),
       ]);
     } catch (error) {
       console.error('[BottomEditor] Batch optimize failed:', error);
-      alert('批量变体生成失败，请检查网络或 API 密钥');
+      alert('批量场景扩写失败，请检查网络或 API Key');
     } finally {
       setIsBatchOptimizing(false);
     }
-  }, [apiKey, batchMode, imageCount, prompt, variationCount]);
+  }, [apiKey, batchMode, imageCount, optimizeApiKey, prompt, variationCount]);
 
   const handleAddBatchPrompt = useCallback(() => {
     if (!prompt.trim()) {
@@ -230,39 +238,75 @@ export function BottomEditor({
     setPrompt('');
   }, [prompt]);
 
-  const handleGenerate = useCallback(() => {
-    if (!apiKey.trim()) {
-      alert('请先输入您的 API 密钥');
+  const handleGenerate = useCallback(async () => {
+    const activeApiKey = generationType === 'image'
+      ? (imageApiKey || apiKey)
+      : (videoApiKey || apiKey);
+
+    if (!activeApiKey.trim()) {
+      alert(generationType === 'image' ? '请先填写生图 API Key' : '请先填写生视频 API Key');
       return;
     }
 
     const promptsToProcess = batchMode
-      ? batchPrompts.filter((item) => item.prompt.trim()).map((item) => item.prompt)
-      : [prompt.trim()];
+      ? batchPrompts.filter((item) => item.prompt.trim()).map((item) => item.prompt.trim())
+      : generationType === 'image' && imageCount > 1
+        ? (() => {
+            const explicitVariants = batchPrompts
+              .filter((item) => item.prompt.trim())
+              .map((item) => item.prompt.trim())
+              .slice(0, imageCount);
+
+            if (explicitVariants.length > 0) {
+              return explicitVariants;
+            }
+
+            return Array.from({ length: imageCount }, () => prompt.trim());
+          })()
+        : [prompt.trim()];
 
     if (promptsToProcess.length === 0 || !promptsToProcess[0]) {
       alert('请至少输入一个提示词');
       return;
     }
 
-    onGenerate({
-      generationType,
-      model,
-      veoSubModel,
-      soraSubModel,
-      grokSubModel,
-      imageSubModel,
-      prompts: promptsToProcess,
-      imageData: useImage ? imageData : undefined,
-      imageData2: useImage && (generationType === 'image' || imageType === 'start-end') ? imageData2 : undefined,
-      imageType: generationType === 'video' && useImage ? imageType : undefined,
-      aspectRatio,
-      duration,
-      resolution,
-      negativePrompt,
-      imageCount,
-      variationCount,
-    });
+    if (generationType === 'video' && useImage && imageType === 'start-end' && (!imageData || !imageData2)) {
+      alert('首尾帧模式需要同时上传起始图和结束图');
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenerationStatus(
+      generationType === 'image' && !batchMode && imageCount > 1
+        ? '正在批量生成图片任务...'
+        : generationType === 'image'
+          ? '正在提交生图任务...'
+          : '正在提交视频任务...'
+    );
+
+    try {
+      await onGenerate({
+        generationType,
+        model,
+        veoSubModel,
+        soraSubModel,
+        grokSubModel,
+        imageSubModel,
+        prompts: promptsToProcess,
+        imageData: useImage ? imageData : undefined,
+        imageData2: useImage && (generationType === 'image' || imageType === 'start-end') ? imageData2 : undefined,
+        imageType: generationType === 'video' && useImage ? imageType : undefined,
+        aspectRatio,
+        duration,
+        resolution,
+        negativePrompt,
+        imageCount,
+        variationCount,
+      });
+    } finally {
+      setIsGenerating(false);
+      setGenerationStatus('');
+    }
   }, [
     apiKey,
     aspectRatio,
@@ -271,6 +315,7 @@ export function BottomEditor({
     duration,
     generationType,
     grokSubModel,
+    imageApiKey,
     imageCount,
     imageData,
     imageData2,
@@ -285,6 +330,7 @@ export function BottomEditor({
     useImage,
     variationCount,
     veoSubModel,
+    videoApiKey,
   ]);
 
   return (
@@ -420,6 +466,12 @@ export function BottomEditor({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {isGenerating && (
+          <div className="mb-4 px-4 py-3 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-700">
+            {generationStatus}
           </div>
         )}
 
@@ -586,17 +638,24 @@ export function BottomEditor({
           </div>
 
           <button
-            onClick={handleGenerate}
-            disabled={!apiKey || (!batchMode && !prompt.trim()) || (batchMode && batchPrompts.length === 0)}
+            onClick={() => void handleGenerate()}
+            disabled={
+              isGenerating
+              || !((generationType === 'image' ? (imageApiKey || apiKey) : (videoApiKey || apiKey)).trim())
+              || (!batchMode && !prompt.trim())
+              || (batchMode && batchPrompts.length === 0)
+            }
             className={`px-8 py-3 font-bold rounded-xl transition-all shadow-lg ${
               generationType === 'image'
                 ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:from-purple-700 hover:to-purple-800 disabled:from-gray-400 disabled:to-gray-400'
                 : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 disabled:from-gray-400 disabled:to-gray-400'
             } disabled:cursor-not-allowed`}
           >
-            {generationType === 'image'
-              ? `生成图片${batchMode ? ` (${batchPrompts.length} 条提示)` : ` x${imageCount}`}`
-              : `生成视频${batchMode ? ` (${batchPrompts.length} 条提示)` : ''}`}
+            {isGenerating
+              ? generationStatus
+              : generationType === 'image'
+                ? `生成图片${batchMode ? ` (${batchPrompts.length} 条提示词)` : ` x${imageCount}`}`
+                : `生成视频${batchMode ? ` (${batchPrompts.length} 条提示词)` : ''}`}
           </button>
         </div>
       </div>

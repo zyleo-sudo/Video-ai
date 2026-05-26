@@ -7,6 +7,7 @@ interface CanvasWorkspaceProps {
   onTaskClick: (task: VideoTask) => void;
   onUpdateTaskPosition: (taskId: string, x: number, y: number) => void;
   onRemoveTask: (taskId: string) => void;
+  onUseAsImageSource?: (task: VideoTask) => void;
   onUseAsVideoSource?: (task: VideoTask) => void;
   onUseBatchAsVideoSource?: (task: VideoTask) => void;
 }
@@ -16,6 +17,7 @@ export function CanvasWorkspace({
   onTaskClick,
   onUpdateTaskPosition,
   onRemoveTask,
+  onUseAsImageSource,
   onUseAsVideoSource,
   onUseBatchAsVideoSource,
 }: CanvasWorkspaceProps) {
@@ -87,6 +89,7 @@ export function CanvasWorkspace({
             onClick={() => onTaskClick(task)}
             onDrag={(x, y) => onUpdateTaskPosition(task.id, x, y)}
             onRemove={onRemoveTask}
+            onUseAsImageSource={onUseAsImageSource}
             onUseAsVideoSource={onUseAsVideoSource}
             onUseBatchAsVideoSource={onUseBatchAsVideoSource}
           />

@@ -9,13 +9,14 @@ import {
   VideoModel,
 } from '../types';
 
-export const ALLAPI_BASE_URL = 'https://allapi.store/v1';
+export const ALLAPI_BASE_URL = 'https://yunwu.ai/v1';
 
 export const VEO_SUB_MODELS: Record<VeoSubModel, { name: string }> = {
   veo_3_1: { name: 'Veo 3.1' },
   'veo_3_1-fast': { name: 'Veo 3.1 Fast' },
   'veo_3_1-fast-4K': { name: 'Veo 3.1 Fast 4K' },
   'veo_3_1-pro': { name: 'Veo 3.1 Pro' },
+  'veo_3_1-components': { name: 'Veo 3.1 Components' },
   'veo3.1-fast': { name: 'Veo 3.1 Fast (Unified)' },
   'veo3.1-pro': { name: 'Veo 3.1 Pro (Unified)' },
   'veo3.1-4k': { name: 'Veo 3.1 4K (Unified)' },
@@ -32,7 +33,7 @@ export const GROK_SUB_MODELS: Record<GrokSubModel, { name: string }> = {
 };
 
 export const IMAGE_SUB_MODELS: Record<ImageSubModel, { name: string }> = {
-  image2: { name: 'Image2' },
+  'gpt-image-2': { name: 'Image2' },
 };
 
 export const MODEL_CONFIGS: Record<VideoModel, { name: string; supportsImage: boolean }> = {
@@ -59,6 +60,9 @@ export const IMAGE_MODEL_CONFIGS: Record<ImageModel, { name: string; supportsIma
 
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: '',
+  optimizeApiKey: '',
+  imageApiKey: '',
+  videoApiKey: '',
   autoDownload: false,
   maxConcurrentTasks: 3,
   defaultGenerationType: 'video',
@@ -67,7 +71,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultVeoSubModel: 'veo_3_1-fast',
   defaultSoraSubModel: 'sora-2-all',
   defaultGrokSubModel: 'grok-video-3',
-  defaultImageSubModel: 'image2',
+  defaultImageSubModel: 'gpt-image-2',
   defaultAspectRatio: '16:9',
   apiBaseUrl: ALLAPI_BASE_URL,
 };
