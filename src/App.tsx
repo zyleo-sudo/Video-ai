@@ -643,7 +643,7 @@ function App() {
     ]);
     queuedTasks.forEach(({ task }) => addTaskToStorage(task));
 
-    await runWithConcurrency(
+    void runWithConcurrency(
       queuedTasks,
       appSettings.maxConcurrentTasks,
       async ({ task, promptText }) => executeTask(task, promptText, data)
@@ -730,7 +730,7 @@ function App() {
     ]);
     queuedVideoTasks.forEach(({ videoTask }) => addTaskToStorage(videoTask));
 
-    await runWithConcurrency(
+    void runWithConcurrency(
       queuedVideoTasks,
       appSettings.maxConcurrentTasks,
       async ({ prompt, videoData, videoTask }) => executeTask(videoTask, prompt, videoData)
