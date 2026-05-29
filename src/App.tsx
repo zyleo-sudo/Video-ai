@@ -87,6 +87,32 @@ interface VideoBatchRunOptions {
   duration?: number;
 }
 
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  if (items.length === 0) {
+    return;
+  }
+
+  const queue = [...items];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+
+  async function runWorker(): Promise<void> {
+    while (queue.length > 0) {
+      const nextItem = queue.shift();
+      if (!nextItem) {
+        return;
+      }
+
+      await worker(nextItem);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+}
+
 function isRetriableImageError(error: unknown): boolean {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
 
@@ -554,6 +580,32 @@ function App() {
     }
   }, [apiKey, videoApiKey]);
 
+  const executeTask = useCallback(async (
+    task: VideoTask,
+    promptText: string,
+    data: GenerateData
+  ): Promise<void> => {
+    try {
+      if (data.generationType === 'image') {
+        await finalizeImageTask(task, promptText, data);
+      } else {
+        await finalizeVideoTask(task, promptText, data);
+      }
+    } catch (error) {
+      console.error('[App] Generation failed:', error);
+      setTasks((prev) => prev.map((current) => (
+        current.id === task.id
+          ? {
+              ...current,
+              status: 'failed',
+              errorMessage: error instanceof Error ? error.message : '未知错误',
+            }
+          : current
+      )));
+      alert(`生成出错: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }, [finalizeImageTask, finalizeVideoTask]);
+
   const handleGenerate = useCallback(async (data: GenerateData) => {
     const activeApiKey = data.generationType === 'image'
       ? (imageApiKey || apiKey)
@@ -577,36 +629,26 @@ function App() {
       ? `${data.generationType === 'image' ? '图片批次' : '视频批次'} ${promptsToRun.length}`
       : undefined;
 
-    for (const promptText of promptsToRun) {
-      const task = createTask(promptText, data, {
+    const queuedTasks = promptsToRun.map((promptText) => ({
+      promptText,
+      task: createTask(promptText, data, {
         batchId,
         batchLabel,
-      });
+      }),
+    }));
 
-      setTasks((prev) => [task, ...prev]);
-      addTaskToStorage(task);
+    setTasks((prev) => [
+      ...queuedTasks.map((item) => item.task).reverse(),
+      ...prev,
+    ]);
+    queuedTasks.forEach(({ task }) => addTaskToStorage(task));
 
-      try {
-        if (data.generationType === 'image') {
-          await finalizeImageTask(task, promptText, data);
-        } else {
-          await finalizeVideoTask(task, promptText, data);
-        }
-      } catch (error) {
-        console.error('[App] Generation failed:', error);
-        setTasks((prev) => prev.map((current) => (
-          current.id === task.id
-            ? {
-                ...current,
-                status: 'failed',
-                errorMessage: error instanceof Error ? error.message : '未知错误',
-              }
-            : current
-        )));
-        alert(`生成出错: ${error instanceof Error ? error.message : '未知错误'}`);
-      }
-    }
-  }, [apiKey, createTask, finalizeImageTask, finalizeVideoTask, imageApiKey, optimizeApiKey, videoApiKey]);
+    await runWithConcurrency(
+      queuedTasks,
+      appSettings.maxConcurrentTasks,
+      async ({ task, promptText }) => executeTask(task, promptText, data)
+    );
+  }, [apiKey, appSettings.maxConcurrentTasks, createTask, executeTask, imageApiKey, optimizeApiKey, videoApiKey]);
 
   const handleUseBatchAsVideoSource = useCallback(async (
     task: VideoTask,
@@ -645,7 +687,7 @@ function App() {
     const batchId = generateId();
     const batchLabel = `视频批次 ${validSeeds.length}`;
 
-    for (const seed of validSeeds) {
+    const queuedVideoTasks = validSeeds.map((seed) => {
       const prompt = options?.prompt || seed.task.prompt || task.prompt;
       const videoData: GenerateData = {
         generationType: 'video',
@@ -675,35 +717,36 @@ function App() {
         sourceTaskId: seed.task.id,
       });
 
-      setTasks((prev) => [videoTask, ...prev]);
-      addTaskToStorage(videoTask);
+      return {
+        prompt,
+        videoData,
+        videoTask,
+      };
+    });
 
-      try {
-        await finalizeVideoTask(videoTask, prompt, videoData);
-      } catch (error) {
-        console.error('[App] Batch video generation failed:', error);
-        setTasks((prev) => prev.map((current) => (
-          current.id === videoTask.id
-            ? {
-                ...current,
-                status: 'failed',
-                errorMessage: error instanceof Error ? error.message : '未知错误',
-              }
-            : current
-        )));
-      }
-    }
+    setTasks((prev) => [
+      ...queuedVideoTasks.map((item) => item.videoTask).reverse(),
+      ...prev,
+    ]);
+    queuedVideoTasks.forEach(({ videoTask }) => addTaskToStorage(videoTask));
+
+    await runWithConcurrency(
+      queuedVideoTasks,
+      appSettings.maxConcurrentTasks,
+      async ({ prompt, videoData, videoTask }) => executeTask(videoTask, prompt, videoData)
+    );
 
     setGenerationType('video');
     setModel(videoModel);
     setActiveNav('tasks');
   }, [
+    appSettings.maxConcurrentTasks,
     createTask,
-    finalizeVideoTask,
     grokSubModel,
     handleUseTaskAsVideoSource,
     imageSubModel,
     imageTasks,
+    executeTask,
     soraSubModel,
     veoSubModel,
   ]);
@@ -874,6 +917,24 @@ function App() {
                       />
                       <p className="mt-2 text-xs text-gray-400">当前三个 Key 默认共用同一个站点地址，保留 `/v1` 即可。</p>
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">最大并发任务数</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={appSettings.maxConcurrentTasks}
+                        onChange={(event) => {
+                          const parsed = Number.parseInt(event.target.value, 10);
+                          updateSettings({
+                            maxConcurrentTasks: Number.isNaN(parsed) ? 1 : Math.max(1, Math.min(10, parsed)),
+                          });
+                        }}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      />
+                      <p className="mt-2 text-xs text-gray-400">批量生图和批量生视频会按这个上限并发提交，建议先用 3 到 5。</p>
+                    </div>
                   </section>
 
                   <section className="p-6 bg-blue-50 rounded-2xl border border-blue-100">
@@ -930,7 +991,7 @@ function App() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" onClick={() => setSelectedTask(null)}>
           <div className="bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">浠诲姟璇︽儏</h3>
+              <h3 className="text-xl font-bold text-gray-900">任务详情</h3>
               <button
                 onClick={() => setSelectedTask(null)}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md"
@@ -1003,7 +1064,7 @@ function App() {
 
               {selectedTask.videoUrl && (
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">绱犳潗閾炬帴</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">素材链接</label>
                   <div className="mt-2 flex gap-3">
                     <input
                       type="text"

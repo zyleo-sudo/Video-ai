@@ -376,6 +376,7 @@ export async function createVeoVideoUnified(
     body: JSON.stringify({
       model: subModel,
       prompt,
+      seconds: options.duration || 4,
       aspect_ratio: options.aspectRatio || '16:9',
       enhance_prompt: true,
     }),
@@ -494,6 +495,7 @@ async function createVeoVideoUnifiedWithImages(
     body: JSON.stringify({
       model: subModel,
       prompt,
+      seconds: options.duration || 4,
       aspect_ratio: options.aspectRatio || '16:9',
       enhance_prompt: true,
       images: normalizedImages,
@@ -964,6 +966,10 @@ export async function createImage2Image(
     const formData = new FormData();
     formData.append('model', subModel);
     formData.append('prompt', prompt);
+    formData.append('size', size);
+    formData.append('aspect_ratio', aspectRatio);
+    formData.append('width', String(width));
+    formData.append('height', String(height));
     normalizedRefs.forEach((imageData, index) => {
       appendImageEditField(formData, 'image', imageData, index + 1);
     });
