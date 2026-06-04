@@ -16,7 +16,7 @@ import {
   VEO_SUB_MODELS,
 } from '../../utils/constants';
 
-const APP_VERSION = 'v2.1.2';
+const APP_VERSION = 'v2.1.3';
 
 interface TopBarProps {
   generationType: GenerationType;

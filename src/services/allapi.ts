@@ -248,6 +248,11 @@ function extractMessage(data: unknown): string | undefined {
     return direct;
   }
 
+  const errorText = readString(object, 'error');
+  if (errorText) {
+    return errorText;
+  }
+
   const error = asObject(object.error);
   return readString(error, 'message');
 }

@@ -1,6 +1,6 @@
 {
   "name": "video-ai",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "Video generation web app supporting Google Veo and OpenAI Sora",
   "type": "module",
   "scripts": {
