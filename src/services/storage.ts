@@ -95,6 +95,12 @@ export function getSettings(): AppSettings {
       if (parsed.defaultImageSubModel === 'image2') {
         parsed.defaultImageSubModel = 'gpt-image-2';
       }
+      if (parsed.defaultGrokSubModel === 'grok-video-3') {
+        parsed.defaultGrokSubModel = 'grok-video-3-10s';
+      }
+      if (parsed.defaultGenerationType === 'video' && parsed.defaultModel === 'veo') {
+        parsed.defaultModel = 'grok';
+      }
       if (parsed.apiBaseUrl === LEGACY_ALLAPI_BASE_URL) {
         parsed.apiBaseUrl = YUNWU_BASE_URL;
       }

@@ -210,10 +210,10 @@ function App() {
       return;
     }
 
-    setModel('veo');
+    setModel('grok');
     updateSettings({
       defaultGenerationType: type,
-      defaultModel: 'veo',
+      defaultModel: 'grok',
     });
   }, [updateSettings]);
 
@@ -304,10 +304,10 @@ function App() {
     }
 
     setGenerationType('video');
-    setModel('veo');
+    setModel('grok');
     updateSettings({
       defaultGenerationType: 'video',
-      defaultModel: 'veo',
+      defaultModel: 'grok',
     });
     setEditorSeedImages([
       {
@@ -682,8 +682,8 @@ function App() {
       return;
     }
 
-    const videoModel = options?.model || 'veo';
-    const duration = options?.duration || 4;
+    const videoModel = options?.model || 'grok';
+    const duration = options?.duration || 10;
     const batchId = generateId();
     const batchLabel = `视频批次 ${validSeeds.length}`;
 

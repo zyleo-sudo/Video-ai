@@ -147,6 +147,13 @@ export function BottomEditor({
     }
   }, [availableDurations, generationType]);
 
+  useEffect(() => {
+    if (generationType === 'video' && model === 'grok' && imageType === 'start-end') {
+      setImageType('reference');
+      setImageData2(undefined);
+    }
+  }, [generationType, imageType, model]);
+
   const handleFileSelect = useCallback((slot: 'primary' | 'secondary') => {
     if (slot === 'primary') {
       fileInputRef.current?.click();
@@ -378,7 +385,7 @@ export function BottomEditor({
               图片输入
             </button>
 
-            {useImage && generationType === 'video' && (
+            {useImage && generationType === 'video' && model !== 'grok' && (
               <>
                 <div className="h-6 w-px bg-gray-300 mx-1" />
                 <button
@@ -410,7 +417,7 @@ export function BottomEditor({
                     ? imageData ? '替换参考图 A' : '选择参考图 A'
                     : imageData ? '替换起始图' : '选择起始图'}
                 </button>
-                {(generationType === 'image' || imageType === 'start-end') && (
+                {(generationType === 'image' || (model !== 'grok' && imageType === 'start-end')) && (
                   <button
                     onClick={() => handleFileSelect('secondary')}
                     className="px-3 py-2 text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg transition-all"

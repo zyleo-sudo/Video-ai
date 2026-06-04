@@ -28,7 +28,7 @@ export type VeoSubModel =
 export type SoraSubModel = 'sora-2-all';
 
 // Grok sub-model types
-export type GrokSubModel = 'grok-video-3';
+export type GrokSubModel = 'grok-video-3-10s' | 'grok-video-3';
 
 // Image sub-model types
 export type ImageSubModel = 'gpt-image-2';

@@ -29,6 +29,7 @@ export const SORA_SUB_MODELS: Record<SoraSubModel, { name: string }> = {
 };
 
 export const GROK_SUB_MODELS: Record<GrokSubModel, { name: string }> = {
+  'grok-video-3-10s': { name: 'Grok Video 3 10s' },
   'grok-video-3': { name: 'Grok Video 3' },
 };
 
@@ -47,7 +48,7 @@ export const MODEL_CONFIGS: Record<VideoModel, { name: string; supportsImage: bo
   },
   grok: {
     name: 'Grok',
-    supportsImage: false,
+    supportsImage: true,
   },
 };
 
@@ -66,11 +67,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoDownload: false,
   maxConcurrentTasks: 3,
   defaultGenerationType: 'video',
-  defaultModel: 'veo',
+  defaultModel: 'grok',
   defaultImageModel: 'image2',
   defaultVeoSubModel: 'veo_3_1-fast',
   defaultSoraSubModel: 'sora-2-all',
-  defaultGrokSubModel: 'grok-video-3',
+  defaultGrokSubModel: 'grok-video-3-10s',
   defaultImageSubModel: 'gpt-image-2',
   defaultAspectRatio: '16:9',
   apiBaseUrl: ALLAPI_BASE_URL,
@@ -94,7 +95,7 @@ export const IMAGE_RESOLUTION_OPTIONS = [
 export const DURATION_OPTIONS: Record<VideoModel, number[]> = {
   veo: [4, 5, 6, 8],
   sora: [5, 10, 15],
-  grok: [5, 10],
+  grok: [10, 5],
 };
 
 export const POLLING_CONFIG = {

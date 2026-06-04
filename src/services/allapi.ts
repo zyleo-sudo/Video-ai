@@ -179,6 +179,17 @@ function ratioToOpenAiSize(ratio: string): string {
   return ratioMap[ratio] || '16x9';
 }
 
+function ratioToGrokAspectRatio(ratio: string): '3:2' | '2:3' | '1:1' {
+  if (ratio === '9:16') {
+    return '2:3';
+  }
+  if (ratio === '1:1') {
+    return '1:1';
+  }
+
+  return '3:2';
+}
+
 function base64ToBlob(base64: string): Blob {
   const parts = base64.split(',');
   const mime = parts[0]?.match(/:(.*?);/)?.[1] || 'image/png';
@@ -642,7 +653,7 @@ async function querySoraTask(apiKey: string, taskId: string): Promise<TaskQueryR
 export async function createGrokVideo(
   apiKey: string,
   prompt: string,
-  _subModel: string = 'grok-video-3',
+  subModel: string = 'grok-video-3-10s',
   options: Omit<GrokOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
   const { apiBaseUrl } = getSettings();
@@ -653,10 +664,12 @@ export async function createGrokVideo(
       Accept: 'application/json',
     },
     body: JSON.stringify({
-      model: 'grok-video-3',
+      model: subModel,
       prompt,
-      aspect_ratio: options.aspectRatio === '9:16' ? '2:3' : options.aspectRatio === '1:1' ? '1:1' : '3:2',
+      seconds: options.duration || 10,
+      aspect_ratio: ratioToGrokAspectRatio(options.aspectRatio || '16:9'),
       size: '720P',
+      enhance_prompt: true,
       images: [],
     }),
   });
@@ -674,13 +687,44 @@ export async function createGrokVideo(
 }
 
 export async function createGrokVideoWithImage(
-  _apiKey: string,
-  _prompt: string,
-  _imageData: string,
-  _subModel: string = 'grok-video-3',
-  _options: Omit<GrokOptions, 'subModel'> = {}
+  apiKey: string,
+  prompt: string,
+  imageData: string,
+  subModel: string = 'grok-video-3-10s',
+  options: Omit<GrokOptions, 'subModel'> = {}
 ): Promise<{ taskId: string; status: TaskStatus }> {
-  throw new Error('Grok 图生视频当前不可用，请改用 Veo 或 Sora');
+  if (!imageData.trim()) {
+    throw new Error('Grok 图生视频至少需要一张参考图');
+  }
+
+  const { apiBaseUrl } = getSettings();
+  const response = await authorizedFetch(apiKey, `${apiBaseUrl}/video/create`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      model: subModel,
+      prompt,
+      seconds: options.duration || 10,
+      aspect_ratio: ratioToGrokAspectRatio(options.aspectRatio || '16:9'),
+      size: '720P',
+      enhance_prompt: false,
+      images: [imageData],
+    }),
+  });
+
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(extractMessage(data) || `Grok image-to-video failed: ${response.status}`);
+  }
+
+  const object = asObject(data);
+  return {
+    taskId: readString(object, 'id') || '',
+    status: mapStatus(readString(object, 'status')),
+  };
 }
 
 async function queryGrokTask(apiKey: string, taskId: string): Promise<TaskQueryResult> {
