@@ -671,7 +671,7 @@ export async function createGrokVideo(
     body: JSON.stringify({
       model: subModel,
       prompt,
-      seconds: options.duration || 10,
+      seconds: String(options.duration || 10),
       aspect_ratio: ratioToGrokAspectRatio(options.aspectRatio || '16:9'),
       size: '720P',
       enhance_prompt: true,
@@ -712,7 +712,7 @@ export async function createGrokVideoWithImage(
     body: JSON.stringify({
       model: subModel,
       prompt,
-      seconds: options.duration || 10,
+      seconds: String(options.duration || 10),
       aspect_ratio: ratioToGrokAspectRatio(options.aspectRatio || '16:9'),
       size: '720P',
       enhance_prompt: false,
