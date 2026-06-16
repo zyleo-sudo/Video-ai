@@ -314,10 +314,19 @@ function parseTaskQueryResult(data: unknown): TaskQueryResult {
   const videoUrl = findFirstStringByKeys(data, [
     'video_url',
     'videoUrl',
+    'remixed_from_video_id',
+    'remixed_from_video_url',
+    'generated_video_url',
+    'result_url',
+    'output_url',
     'file_url',
     'download_url',
+    'downloadUrl',
     'play_url',
     'media_url',
+    'mediaUrl',
+    'main_url',
+    'backup_url_1',
     'url',
     'src',
   ]);
@@ -338,6 +347,21 @@ function parseTaskQueryResult(data: unknown): TaskQueryResult {
     thumbnailUrl,
     progress,
     errorMessage: extractMessage(data),
+  };
+}
+
+function parseCreatedTask(data: unknown): { taskId: string; status: TaskStatus } {
+  const object = asObject(data);
+  const taskId = readString(object, 'id')
+    || readString(object, 'task_id')
+    || readString(object, 'taskId')
+    || readString(object, 'video_id')
+    || readString(object, 'videoId')
+    || '';
+
+  return {
+    taskId,
+    status: mapStatus(readString(object, 'status')),
   };
 }
 
@@ -367,11 +391,7 @@ export async function createVeoVideo(
     throw new Error(extractMessage(data) || `Veo create failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 export async function createVeoVideoUnified(
@@ -403,11 +423,7 @@ export async function createVeoVideoUnified(
     throw new Error(extractMessage(data) || `Veo unified create failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 export async function createVeoVideoAuto(
@@ -469,11 +485,7 @@ export async function createVeoVideoWithImage(
     throw new Error(extractMessage(data) || `Veo image-to-video failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 function isUnifiedVeoImageModel(model: string): boolean {
@@ -523,11 +535,7 @@ async function createVeoVideoUnifiedWithImages(
     throw new Error(extractMessage(data) || `Veo unified image-to-video failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 async function queryVeoTask(apiKey: string, taskId: string): Promise<TaskQueryResult> {
@@ -598,11 +606,7 @@ export async function createSoraVideo(
     throw new Error(extractMessage(data) || `Sora create failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 export async function createSoraVideoWithImage(
@@ -633,11 +637,7 @@ export async function createSoraVideoWithImage(
     throw new Error(extractMessage(data) || `Sora image-to-video failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 async function querySoraTask(apiKey: string, taskId: string): Promise<TaskQueryResult> {
@@ -684,11 +684,7 @@ export async function createGrokVideo(
     throw new Error(extractMessage(data) || `Grok create failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 export async function createGrokVideoWithImage(
@@ -725,11 +721,7 @@ export async function createGrokVideoWithImage(
     throw new Error(extractMessage(data) || `Grok image-to-video failed: ${response.status}`);
   }
 
-  const object = asObject(data);
-  return {
-    taskId: readString(object, 'id') || '',
-    status: mapStatus(readString(object, 'status')),
-  };
+  return parseCreatedTask(data);
 }
 
 async function queryGrokTask(apiKey: string, taskId: string): Promise<TaskQueryResult> {
